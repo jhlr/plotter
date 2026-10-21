@@ -1,13 +1,18 @@
-"""ADK agent: Gemini plans the drawing, the penarm MCP server executes it on the arm."""
+"""ADK agent: the configured LLM plans the drawing, the penarm MCP server executes it on the arm."""
 import os
 from pathlib import Path
 
 from google.adk.agents import LlmAgent
+from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools.mcp_tool import McpToolset, StdioConnectionParams
 from mcp import StdioServerParameters
 
 SERVER_DIR = Path(__file__).resolve().parents[2] / "server"
-MODEL = os.environ.get("PENARM_MODEL", "gemini-2.5-flash")
+# Provider-agnostic: "gemini-2.5-flash" uses ADK's native Gemini client; any "provider/model" string
+# (openai/gpt-4o, anthropic/claude-sonnet-5-5, ollama_chat/llama3.1, ...) goes through LiteLLM,
+# which reads that provider's usual API-key env var.
+MODEL_NAME = os.environ.get("PENARM_MODEL", "gemini-2.5-flash")
+MODEL: str | LiteLlm = LiteLlm(model=MODEL_NAME) if "/" in MODEL_NAME else MODEL_NAME
 
 INSTRUCTION = """\
 You control a pen-plotter arm that draws on a paper notebook through tools.

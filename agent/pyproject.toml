@@ -5,6 +5,7 @@ description = "Google ADK agent that draws on paper through the penarm MCP serve
 requires-python = ">=3.11"
 dependencies = [
     "google-adk>=1.25",
+    "litellm>=1.106.2",
     "mcp<2",
 ]
 

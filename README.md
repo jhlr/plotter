@@ -11,9 +11,9 @@ Code: ``. 2-link planar arm, 2 SG90 servos + 2 feedback pots, pencil in a clamp 
 MCP client entry: command `uv`, args `["--directory", ".../server", "run", "penarm-mcp"]`.
 
 ## Agent (Google ADK)
-`agent/` is a separate uv project (ADK pins `mcp<2`, the server uses mcp 2.x). `penarm_agent/agent.py` defines `root_agent` (Gemini, model via `PENARM_MODEL`), which spawns the MCP server over stdio and uses its tools.
+`agent/` is a separate uv project (ADK pins `mcp<2`, the server uses mcp 2.x). `penarm_agent/agent.py` defines `root_agent` (any LLM via `PENARM_MODEL`: plain `gemini-*` is native, `provider/model` goes through LiteLLM, e.g. `openai/gpt-4o`, `anthropic/claude-sonnet-5-5`, `ollama_chat/llama3.1`), which spawns the MCP server over stdio and uses its tools.
 
-    cd agent && export GOOGLE_API_KEY=...   # simulator unless PENARM_PORT is set
+    cd agent && export PENARM_MODEL=anthropic/claude-sonnet-5-5 ANTHROPIC_API_KEY=...  # or GOOGLE_API_KEY with the default; simulator unless PENARM_PORT is set
     uv run penarm-chat                      # terminal loop
     uv run adk web .                        # ADK dev UI
 
