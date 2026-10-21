@@ -39,3 +39,21 @@ def test_failed_path_moves_nothing() -> None:
     with pytest.raises(Unreachable):
         arm.draw_polyline([(105.0, 100.0), (105.0, 100.5), (999.0, 999.0)])
     assert link.history == []
+
+
+def test_circle_closes_and_stays_on_radius() -> None:
+    from penarm.shapes import arc_points
+
+    pts = arc_points(105.0, 100.0, 20.0, 0.0, 360.0)
+    assert math.dist(pts[0], pts[-1]) < 1e-9
+    assert all(abs(math.dist(p, (105.0, 100.0)) - 20.0) < 1e-9 for p in pts)
+    # chord midpoints deviate from the circle by <= tol
+    mids = [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(pts, pts[1:])]
+    assert all(20.0 - math.dist(m, (105.0, 100.0)) <= 0.1 + 1e-9 for m in mids)
+
+
+def test_clockwise_arc_direction() -> None:
+    from penarm.shapes import arc_points
+
+    pts = arc_points(0.0, 0.0, 10.0, 90.0, 0.0)
+    assert pts[0][1] > pts[-1][1] and pts[-1][0] > pts[0][0]
