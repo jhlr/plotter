@@ -1,6 +1,7 @@
 """Owner of the draw cycle: path -> Cartesian interpolation -> IK -> link. Everything else is a primitive."""
 from .config import ArmConfig
-from .kinematics import Unreachable, fk, interpolate, page_to_servos, servos_to_joints
+from .errors import Unreachable
+from .kinematics import fk, interpolate, page_to_servos, servos_to_joints
 from .link import Link
 
 
@@ -28,10 +29,14 @@ class Arm:
         for x, y in points:
             self.move_to(x, y)
 
+    def tip_fk(self) -> tuple[float, float]:
+        """Tip position (mm) from the servo angles the firmware reports (kinematic estimate)."""
+        _, _, s1, s2 = self.link.read()
+        return fk(self.cfg, *servos_to_joints(self.cfg, s1, s2))
+
     def state(self) -> dict[str, object]:
         adc1, adc2, s1, s2 = self.link.read()
-        t1, t2 = servos_to_joints(self.cfg, s1, s2)
-        return {"servo_deg": (s1, s2), "pot_raw": (adc1, adc2), "tip_mm": fk(self.cfg, t1, t2),
+        return {"servo_deg": (s1, s2), "pot_raw": (adc1, adc2), "tip_mm": self.tip_fk(),
                 "last_commanded_mm": self.pos}
 
 

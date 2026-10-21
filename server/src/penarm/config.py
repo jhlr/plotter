@@ -26,3 +26,26 @@ class ArmConfig:
 
 
 DEFAULT = ArmConfig()
+
+
+@dataclass(frozen=True)
+class VisionConfig:
+    """Overhead camera: 4 ArUco markers stuck on the page define the pixel -> mm homography."""
+
+    aruco_dict: str = "DICT_4X4_50"
+    marker_size_mm: float = 20.0
+    # marker id -> marker CENTER in page mm. Stick them where the printed sheet says; keep in sync.
+    marker_centers: tuple[tuple[int, float, float], ...] = (
+        (0, 15.0, 15.0),
+        (1, 133.0, 15.0),
+        (2, 133.0, 195.0),
+        (3, 15.0, 195.0),
+    )
+    # Pencil tag (green eraser end by default), OpenCV HSV ranges (H 0-179).
+    hsv_lo: tuple[int, int, int] = (40, 80, 50)
+    hsv_hi: tuple[int, int, int] = (85, 255, 255)
+    min_blob_px: int = 30
+    frames: int = 5  # frames fused (median) per fix
+
+
+VISION = VisionConfig()

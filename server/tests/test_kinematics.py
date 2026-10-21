@@ -4,7 +4,8 @@ import pytest
 
 from penarm.arm import Arm
 from penarm.config import ArmConfig
-from penarm.kinematics import Unreachable, fk, ik, interpolate, page_to_servos
+from penarm.errors import Unreachable
+from penarm.kinematics import fk, ik, interpolate, page_to_servos
 from penarm.link import SimLink
 
 CFG = ArmConfig()

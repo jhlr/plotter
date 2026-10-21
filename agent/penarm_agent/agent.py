@@ -24,10 +24,12 @@ Rules:
 4. Keep every point at least 10 mm inside the page edges. If a tool reports a point as unreachable,
    shrink or shift the drawing instead of retrying the same coordinates.
 5. Before drawing, say in one sentence what you will draw and where. After, confirm what was drawn.
+6. If locate_pencil is available, call it after a stroke to verify the tip ended where intended. It returns
+   numbers only (no image). If error_mm is above ~2 mm, report the drift instead of drawing on blindly.
 """
 
-# PENARM_PORT is forwarded to the server: set it for real hardware, leave it unset for the simulator.
-_env = {k: v for k, v in os.environ.items() if k == "PENARM_PORT"}
+# Forwarded to the server: PENARM_PORT = real arm (unset = simulator), PENARM_CAMERA = overhead camera (unset = no vision).
+_env = {k: v for k, v in os.environ.items() if k in ("PENARM_PORT", "PENARM_CAMERA")}
 
 root_agent = LlmAgent(
     name="penarm_artist",

@@ -10,6 +10,13 @@ dev = ["pytest>=8", "mypy>=1.10", "types-pyserial"]
 
 [project.scripts]
 penarm-mcp = "penarm.server:main"
+penarm-markers = "penarm.vision:markers_main"
+
+[project.optional-dependencies]
+vision = [
+    "numpy>=2.4.6",
+    "opencv-python-headless>=4.8",
+]
 
 [build-system]
 requires = ["hatchling"]

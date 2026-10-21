@@ -10,6 +10,12 @@ Code: ``. 2-link planar arm, 2 SG90 servos + 2 feedback pots, pencil in a clamp 
     cd server && uv run pytest && PENARM_PORT=/dev/cu.usbserial-XXXX uv run penarm-mcp
 MCP client entry: command `uv`, args `["--directory", ".../server", "run", "penarm-mcp"]`.
 
+## Vision (optional)
+Overhead camera, OpenCV runs in the server: the LLM gets `locate_pencil` numbers (x/y mm, frames seen, spread, error vs kinematic estimate), never frames.
+1. `uv sync --all-extras && uv run penarm-markers` writes `markers/marker_{0..3}.png`; print at 20 mm and stick the centers at the page positions in `VisionConfig` (homography is re-learned every frame, so a bumped camera self-corrects).
+2. Pencil tag = green blob (eraser end) by default; tune `hsv_lo/hsv_hi` in `config.py`. Parallax from a tall tag is not corrected yet.
+3. `PENARM_CAMERA=0` (device index or stream URL) enables the tool. Tested on a synthetic perspective scene (< 1 mm), not on a real camera yet.
+
 ## Agent (Google ADK)
 `agent/` is a separate uv project (ADK pins `mcp<2`, the server uses mcp 2.x). `penarm_agent/agent.py` defines `root_agent` (any LLM via `PENARM_MODEL`: plain `gemini-*` is native, `provider/model` goes through LiteLLM, e.g. `openai/gpt-4o`, `anthropic/claude-sonnet-5-5`, `ollama_chat/llama3.1`), which spawns the MCP server over stdio and uses its tools.
 

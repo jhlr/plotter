@@ -2,10 +2,7 @@
 import math
 
 from .config import ArmConfig
-
-
-class Unreachable(ValueError):
-    pass
+from .errors import Unreachable
 
 
 def ik(cfg: ArmConfig, x: float, y: float) -> tuple[float, float]:
