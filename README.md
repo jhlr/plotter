@@ -14,8 +14,10 @@ Uno pins: servos D9/D10, pots A0/A1 (10-bit ADC, 0..1023 vs ESP32's 0..4095; `?`
 
 Power the servos from an external 5 V supply with common GND on either board.
 
+Serial runs at 57600 baud (`PENARM_BAUD` in `config.h`, matched by `SerialLink`): at 115200 a CH340 Uno clone dropped ~40% of reply lines. The Windows CH340 driver (3.9) also refuses to configure a port at the baud it already has, so `SerialLink` opens at 9600, switches once and never reconfigures.
+
 ## Run
-    cd server && uv run pytest && PENARM_PORT=/dev/cu.usbserial-XXXX uv run penarm-mcp
+    cd server && uv run pytest && PENARM_PORT=/dev/cu.usbserial-XXXX uv run penarm-mcp   # Windows: PENARM_PORT=COM3
 MCP client entry: command `uv`, args `["--directory", ".../server", "run", "penarm-mcp"]`.
 
 ## Vision (optional)
@@ -32,7 +34,7 @@ Overhead camera, OpenCV runs in the server: the LLM gets `locate_pencil` numbers
     uv run adk web .                        # ADK dev UI
 
 ## TODO
-1. Measure real link lengths, base position, page placement -> `config.py` (current values are placeholders).
-2. Calibrate sign/offset per servo (servo angle vs real joint angle); then pot raw -> angle.
+1. Link lengths measured (105/115 mm); base position and page placement are rough (ruler + photos) -> refine in `config.py`.
+2. Servo signs tested, offsets estimated from photos (a 60 mm square draws square but ~50 mm: pen friction lag). Pots are not wired yet; then pot raw -> angle.
 3. Pen lift (3rd servo) -> `pen_up`/`pen_down` tools. Stiffen link 2 (flexes).
 4. Closed loop with pots; optional camera feedback loop.

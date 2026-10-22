@@ -4,22 +4,29 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ArmConfig:
-    # Link lengths, joint axis to joint axis / pen tip (mm). PLACEHOLDERS: measure the real arm.
-    l1: float = 100.0
-    l2: float = 130.0
+    # Link lengths, joint axis to joint axis / pen tip (mm). Measured on the real arm.
+    l1: float = 105.0
+    l2: float = 115.0
     # Shoulder axis position in page coordinates (mm). Page origin = bottom-left corner of the
     # sheet, x to the right, y away from the arm base. Base sits below the sheet's bottom edge.
-    base_x: float = 105.0
-    base_y: float = -20.0
-    # Page size (mm), A5-ish notebook by default.
-    page_w: float = 148.0
-    page_h: float = 210.0
+    # Base axis ~1 cm below the sheet, centered (measured roughly). A commanded 60 mm square came out ~50 mm:
+    # pen friction makes the joints lag (the thin end of link 2 bends), so drawings run small and wobbly.
+    base_x: float = 100.0
+    base_y: float = -10.0
+    # Page size (mm): 200 x 275 notebook sheet.
+    page_w: float = 200.0
+    page_h: float = 275.0
     # Servo angle (deg) <-> joint angle (deg): joint = sign * (servo - offset).
     # Joint 1 is measured from +x axis (page), joint 2 is relative to link 1.
+    # Signs: both servos turn the arm counter-clockwise (seen from above) as the angle grows (tested).
+    # Offsets from the photo: at 90/90 link 1 points ~103 deg and the elbow is bent ~13 deg clockwise.
     sign1: float = 1.0
-    offset1: float = 90.0
+    offset1: float = -13.0
     sign2: float = 1.0
-    offset2: float = 90.0
+    offset2: float = 103.0
+    # Usable servo range (deg): an SG90 driven near its end stops (500/2400 us) is inaccurate, so keep a margin.
+    servo_min: float = 10.0
+    servo_max: float = 170.0
     elbow_up: bool = True  # which of the two IK solutions to use
     seg_mm: float = 1.0  # Cartesian interpolation step for straight lines
     speed_dps: float = 40.0  # servo speed while drawing (deg/s)
