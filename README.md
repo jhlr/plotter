@@ -6,6 +6,14 @@ Code: ``. 2-link planar arm, 2 SG90 servos + 2 feedback pots, pencil in a clamp 
 - `firmware` (PlatformIO, esp32dev): line protocol `?`, `V`, `A s1 s2` (OK on arrival), `R`. Servos GPIO18/19, pots GPIO34/35. Builds clean.
 - `server` (uv): `config.py` = geometry + calibration (single source), `kinematics.py` = IK/FK, `arm.py` = owner of the draw cycle, `server.py` = MCP tools (`page_info`, `move_to`, `draw_polyline`, `get_state`). `PENARM_PORT` unset = simulator.
 
+## Boards (ESP32 or Arduino Uno)
+`firmware/src/config.h` is the only board-specific file (pins, servo lib, ADC range). Envs: `esp32`, `uno` (main firmware) and `servotest`, `servotest_uno` (standalone serial servo test: `1 90`, `2 90`, `c`, `s`, `r`).
+Uno pins: servos D9/D10, pots A0/A1 (10-bit ADC, 0..1023 vs ESP32's 0..4095; `?` reports `adcmax`). ESP32: servos GPIO18/19, pots GPIO34/35.
+
+    cd firmware && pio run -e uno -t upload        # or -e esp32 / -e servotest_uno
+
+Power the servos from an external 5 V supply with common GND on either board.
+
 ## Run
     cd server && uv run pytest && PENARM_PORT=/dev/cu.usbserial-XXXX uv run penarm-mcp
 MCP client entry: command `uv`, args `["--directory", ".../server", "run", "penarm-mcp"]`.

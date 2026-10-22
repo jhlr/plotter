@@ -1,17 +1,10 @@
-// Pen-plotter arm firmware: 2 servos + 2 feedback pots, line protocol over USB serial.
-//   ?            -> "OK penarm 1"
+// Pen-plotter arm firmware (ESP32 or Arduino Uno, see config.h): 2 servos + 2 feedback pots, line protocol over USB serial.
+//   ?            -> "OK penarm 1 adcmax=<4095|1023>"
 //   V <deg/s>    -> set max servo speed            -> "OK"
 //   A <s1> <s2>  -> go to servo angles (deg, 0-180), ramped; "OK" once reached
-//   R            -> "R <adc1> <adc2> <s1> <s2>"    (raw 12-bit ADC, current servo angles)
-#include <Arduino.h>
-#include <ESP32Servo.h>
+//   R            -> "R <adc1> <adc2> <s1> <s2>"    (raw ADC, 0..adcmax; current servo angles)
+#include "config.h"
 
-constexpr int PIN_SERVO1 = 18;
-constexpr int PIN_SERVO2 = 19;
-constexpr int PIN_POT1 = 34;  // ADC1, input only
-constexpr int PIN_POT2 = 35;
-constexpr int PULSE_MIN_US = 500;
-constexpr int PULSE_MAX_US = 2400;
 constexpr float HOME1 = 90.0f;
 constexpr float HOME2 = 90.0f;
 constexpr uint32_t STEP_MS = 10;
@@ -54,15 +47,19 @@ void stepMotion() {
 
 void handle(const String& cmd) {
   if (cmd == "?") {
-    Serial.println("OK penarm 1");
+    Serial.print("OK penarm 1 adcmax=");
+    Serial.println(ADC_MAX);
   } else if (cmd.startsWith("V ")) {
     float v = cmd.substring(2).toFloat();
     if (v < 1.0f || v > 300.0f) { Serial.println("ERR speed"); return; }
     maxSpeed = v;
     Serial.println("OK");
   } else if (cmd.startsWith("A ")) {
-    float a, b;
-    if (sscanf(cmd.c_str() + 2, "%f %f", &a, &b) != 2 || a < 0 || a > 180 || b < 0 || b > 180) {
+    // AVR's sscanf has no float support, so split by hand
+    int sp = cmd.indexOf(' ', 2);
+    float a = cmd.substring(2, sp).toFloat();
+    float b = cmd.substring(sp + 1).toFloat();
+    if (sp < 0 || a < 0 || a > 180 || b < 0 || b > 180) {
       Serial.println("ERR angles");
       return;
     }
@@ -70,7 +67,14 @@ void handle(const String& cmd) {
     tgt[1] = b;
     ackPending = true;  // "OK" is sent by stepMotion() on arrival
   } else if (cmd == "R") {
-    Serial.printf("R %d %d %.1f %.1f\n", analogRead(PIN_POT1), analogRead(PIN_POT2), cur[0], cur[1]);
+    Serial.print("R ");
+    Serial.print(analogRead(PIN_POT1));
+    Serial.print(' ');
+    Serial.print(analogRead(PIN_POT2));
+    Serial.print(' ');
+    Serial.print(cur[0], 1);
+    Serial.print(' ');
+    Serial.println(cur[1], 1);
   } else {
     Serial.println("ERR unknown");
   }
@@ -78,7 +82,7 @@ void handle(const String& cmd) {
 
 void setup() {
   Serial.begin(115200);
-  analogReadResolution(12);
+  boardInit();
   servo1.attach(PIN_SERVO1, PULSE_MIN_US, PULSE_MAX_US);
   servo2.attach(PIN_SERVO2, PULSE_MIN_US, PULSE_MAX_US);
   writeServos();
