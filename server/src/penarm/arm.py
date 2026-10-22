@@ -11,6 +11,12 @@ class Arm:
         self.link = link
         self.pos: tuple[float, float] | None = None  # last commanded page position (mm)
         link.set_speed(cfg.speed_dps)
+        try:  # first stroke starts from the boot pose in a straight line, not a joint-space swing off the page
+            home = self.tip_fk()
+            page_to_servos(cfg, *home)
+            self.pos = home
+        except Unreachable:
+            pass
 
     def move_to(self, x: float, y: float) -> None:
         """Straight line from the current position to (x, y); validated fully before moving."""

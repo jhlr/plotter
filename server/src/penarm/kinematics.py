@@ -28,8 +28,9 @@ def fk(cfg: ArmConfig, t1_deg: float, t2_deg: float) -> tuple[float, float]:
 def joints_to_servos(cfg: ArmConfig, t1: float, t2: float) -> tuple[float, float]:
     s1 = cfg.offset1 + t1 / cfg.sign1
     s2 = cfg.offset2 + t2 / cfg.sign2
-    if not (0.0 <= s1 <= 180.0 and 0.0 <= s2 <= 180.0):
-        raise Unreachable(f"servo angles ({s1:.1f},{s2:.1f}) out of 0-180 range")
+    lo, hi = cfg.servo_min, cfg.servo_max
+    if not (lo <= s1 <= hi and lo <= s2 <= hi):
+        raise Unreachable(f"servo angles ({s1:.1f},{s2:.1f}) out of {lo:.0f}-{hi:.0f} range")
     return s1, s2
 
 
