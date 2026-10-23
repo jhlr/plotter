@@ -1,4 +1,4 @@
-// Servo movement test (ESP32 or Uno, see config.h). Open the serial monitor (115200) and type:
+// Servo movement test (ESP32 or Uno, see config.h). Open the serial monitor (57600) and type:
 //   1 <0-180>   move servo 1        2 <0-180>   move servo 2
 //   c           center both (90)    s           slow sweep of both, then back to 90
 //   r           print both pots (raw ADC)
@@ -41,7 +41,7 @@ void handle(const String& cmd) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(PENARM_BAUD);
   boardInit();
   servo[0].attach(PIN_SERVO1, PULSE_MIN_US, PULSE_MAX_US);
   servo[1].attach(PIN_SERVO2, PULSE_MIN_US, PULSE_MAX_US);

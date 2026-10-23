@@ -3,7 +3,11 @@
 //   V <deg/s>    -> set max servo speed            -> "OK"
 //   A <s1> <s2>  -> go to servo angles (deg, 0-180), ramped; "OK" once reached
 //   R            -> "R <adc1> <adc2> <s1> <s2>"    (raw ADC, 0..adcmax; current servo angles)
+// Boots at HOME, or on the Uno at the last resting pose saved in EEPROM (see PERSIST_POSE in config.h).
 #include "config.h"
+#if PERSIST_POSE
+#include <EEPROM.h>
+#endif
 
 constexpr float HOME1 = 90.0f;
 constexpr float HOME2 = 90.0f;
@@ -14,12 +18,45 @@ float cur[2] = {HOME1, HOME2};
 float tgt[2] = {HOME1, HOME2};
 float maxSpeed = 60.0f;  // deg/s
 bool ackPending = false;
+bool moving = false;
 uint32_t lastStep = 0;
 String line;
 
+#if PERSIST_POSE
+struct Pose {
+  uint16_t magic;
+  float a, b;
+};
+constexpr uint16_t POSE_MAGIC = 0x50A1;
+constexpr int POSE_ADDR = 0;
+constexpr uint32_t POSE_SAVE_IDLE_MS = 500;  // save only once the arm has rested, not on every step (EEPROM wear)
+bool poseDirty = false;
+uint32_t arrivedAt = 0;
+
+void loadPose() {
+  Pose p;
+  EEPROM.get(POSE_ADDR, p);
+  if (p.magic == POSE_MAGIC && p.a >= 0 && p.a <= 180 && p.b >= 0 && p.b <= 180) {  // blank EEPROM / NaN: HOME
+    cur[0] = tgt[0] = p.a;
+    cur[1] = tgt[1] = p.b;
+  }
+}
+
+void savePoseWhenIdle() {
+  if (!poseDirty || moving || millis() - arrivedAt < POSE_SAVE_IDLE_MS) return;
+  EEPROM.put(POSE_ADDR, Pose{POSE_MAGIC, cur[0], cur[1]});  // put() only rewrites bytes that changed
+  poseDirty = false;
+}
+#endif
+
+int toMicros(float deg) {
+  return PULSE_MIN_US + (int)lroundf((PULSE_MAX_US - PULSE_MIN_US) * deg / 180.0f);
+}
+
 void writeServos() {
-  servo1.write(cur[0]);
-  servo2.write(cur[1]);
+  // writeMicroseconds, not write(): write() takes whole degrees and turns smooth ramps into 1-degree steps
+  servo1.writeMicroseconds(toMicros(cur[0]));
+  servo2.writeMicroseconds(toMicros(cur[1]));
 }
 
 void stepMotion() {
@@ -28,7 +65,7 @@ void stepMotion() {
   float dt = (now - lastStep) / 1000.0f;
   lastStep = now;
   float maxStep = maxSpeed * dt;
-  bool moving = false;
+  moving = false;
   for (int i = 0; i < 2; i++) {
     float d = tgt[i] - cur[i];
     if (fabsf(d) > maxStep) {
@@ -42,6 +79,10 @@ void stepMotion() {
   if (!moving && ackPending) {
     Serial.println("OK");
     ackPending = false;
+#if PERSIST_POSE
+    poseDirty = true;
+    arrivedAt = now;
+#endif
   }
 }
 
@@ -81,8 +122,12 @@ void handle(const String& cmd) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(PENARM_BAUD);
   boardInit();
+#if PERSIST_POSE
+  loadPose();
+#endif
+  writeServos();  // also before attach: the first pulses carry the boot pose, not the library's 1500 us default
   servo1.attach(PIN_SERVO1, PULSE_MIN_US, PULSE_MAX_US);
   servo2.attach(PIN_SERVO2, PULSE_MIN_US, PULSE_MAX_US);
   writeServos();
@@ -101,4 +146,7 @@ void loop() {
     }
   }
   stepMotion();
+#if PERSIST_POSE
+  savePoseWhenIdle();
+#endif
 }
