@@ -8,7 +8,7 @@ Code: ``. 2-link planar arm, 2 SG90 servos + 2 feedback pots, pencil in a clamp 
 
 ## Boards (ESP32 or Arduino Uno)
 `firmware/src/config.h` is the only board-specific file (pins, servo lib, ADC range). Envs: `esp32`, `uno` (main firmware) and `servotest`, `servotest_uno` (standalone serial servo test: `1 90`, `2 90`, `c`, `s`, `r`).
-Uno pins: servos D9/D10, pots A0/A1 (10-bit ADC, 0..1023 vs ESP32's 0..4095; `?` reports `adcmax`). ESP32: servos GPIO18/19, pots GPIO34/35.
+Uno pins: proximal servo (1) D10, distal servo (2) D9, pots A0/A1 (10-bit ADC, 0..1023 vs ESP32's 0..4095; `?` reports `adcmax`). ESP32: servos GPIO18/19, pots GPIO34/35.
 
     cd firmware && pio run -e uno -t upload        # or -e esp32 / -e servotest_uno
 
@@ -19,6 +19,15 @@ Serial runs at 57600 baud (`PENARM_BAUD` in `config.h`, matched by `SerialLink`)
 ## Run
     cd server && uv run pytest && PENARM_PORT=/dev/cu.usbserial-XXXX uv run penarm-mcp   # Windows: PENARM_PORT=COM3
 MCP client entry: command `uv`, args `["--directory", ".../server", "run", "penarm-mcp"]`.
+
+## Canvas and tools
+The server computes a **canvas**: the largest rectangle the arm can fully reach (grid scan of the IK), in its own mm frame (origin bottom-left). Drawing tools take canvas coordinates only, so the LLM never sees page/servo geometry: `canvas_info`, `draw_line`, `draw_polyline`, `draw_rectangle`, `draw_circle`, `draw_arc`, `draw_bezier`, `move_to`, `get_state`, `locate_pencil`. Whole paths are validated before anything moves.
+
+## Calibration (`PENARM_MODE=calibrate`)
+Offsets/signs/base are fitted from measurements instead of edited in code (`calibration.json`, git-ignored, applied on startup):
+1. `calibration_poses` -> for each pose: `goto_servos(s1, s2)`, let the pen mark the sheet, measure the tip on the sheet with a ruler (page mm, origin = sheet's bottom-left corner), `record_calibration_point(x, y)`.
+2. `fit_calibration` (>= 4 points; `fit_lengths=true` with >= 7) tries all 4 sign combinations, reports rmse in mm, saves and applies it; the canvas is recomputed.
+Pure-Python Levenberg-Marquardt, tested on synthetic data (recovers offsets/base < 0.5 mm, picks flipped signs, tolerates 1 mm ruler noise).
 
 ## Vision (optional)
 Overhead camera, OpenCV runs in the server: the LLM gets `locate_pencil` numbers (x/y mm, frames seen, spread, error vs kinematic estimate), never frames.

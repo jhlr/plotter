@@ -13,8 +13,10 @@ constexpr int ADC_MAX = 4095;  // 12-bit
 #define PERSIST_POSE 0
 #elif defined(ARDUINO_ARCH_AVR)  // Arduino Uno
 #include <Servo.h>
-constexpr int PIN_SERVO1 = 9;  // Servo lib takes over Timer1: PWM on 9/10 is unavailable (fine for servos)
-constexpr int PIN_SERVO2 = 10;
+// Servo lib takes over Timer1: PWM on 9/10 is unavailable (fine for servos).
+// Wired on the real arm: proximal servo (shoulder, servo 1) on D10, distal servo (elbow, servo 2) on D9.
+constexpr int PIN_SERVO1 = 10;
+constexpr int PIN_SERVO2 = 9;
 constexpr int PIN_POT1 = A0;
 constexpr int PIN_POT2 = A1;
 constexpr int ADC_MAX = 1023;  // 10-bit

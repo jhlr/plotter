@@ -13,3 +13,26 @@ def arc_points(
     n = max(2, math.ceil(abs(sweep) / step))
     a0 = math.radians(start_deg)
     return [(cx + r * math.cos(a0 + sweep * i / n), cy + r * math.sin(a0 + sweep * i / n)) for i in range(n + 1)]
+
+
+def rect_points(x: float, y: float, w: float, h: float) -> list[tuple[float, float]]:
+    """Closed rectangle path from corner (x, y), counter-clockwise."""
+    return [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]
+
+
+def bezier_points(
+    p0: tuple[float, float], p1: tuple[float, float], p2: tuple[float, float], p3: tuple[float, float],
+    seg_mm: float = 1.0,
+) -> list[tuple[float, float]]:
+    """Cubic Bezier sampled so consecutive points are about `seg_mm` apart (control polygon length bound)."""
+    poly = math.dist(p0, p1) + math.dist(p1, p2) + math.dist(p2, p3)
+    n = max(2, math.ceil(poly / seg_mm))
+    pts = []
+    for i in range(n + 1):
+        t = i / n
+        u = 1 - t
+        pts.append((
+            u**3 * p0[0] + 3 * u**2 * t * p1[0] + 3 * u * t**2 * p2[0] + t**3 * p3[0],
+            u**3 * p0[1] + 3 * u**2 * t * p1[1] + 3 * u * t**2 * p2[1] + t**3 * p3[1],
+        ))
+    return pts
