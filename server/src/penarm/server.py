@@ -19,13 +19,13 @@ R = TypeVar("R")
 
 
 def llm_readable_errors(fn: Callable[P, R]) -> Callable[P, R]:
-    """Unreachable/bad-argument errors reach the LLM with their message so it can adapt the drawing."""
+    """Unreachable/bad-argument/hardware errors reach the LLM with their message so it can adapt the drawing."""
 
     @functools.wraps(fn)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return fn(*args, **kwargs)
-        except (Unreachable, VisionError, ValueError) as exc:
+        except (Unreachable, VisionError, ValueError, TimeoutError, RuntimeError) as exc:
             raise ToolError(str(exc)) from exc
 
     return wrapper

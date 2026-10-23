@@ -1,4 +1,5 @@
 """Transports to the ESP32: real serial and an in-memory simulator."""
+import time
 from typing import Protocol
 
 import serial
@@ -11,8 +12,9 @@ class Link(Protocol):
 
 
 class SerialLink:
-    def __init__(self, port: str, baud: int = 115200, timeout: float = 15.0) -> None:
+    def __init__(self, port: str, baud: int = 115200, timeout: float = 15.0, boot_wait: float = 2.0) -> None:
         self.ser = serial.Serial(port, baud, timeout=timeout)
+        time.sleep(boot_wait)  # opening the port resets an Uno (DTR); commands sent during the bootloader are lost
         self.ser.reset_input_buffer()
 
     def _cmd(self, text: str) -> str:

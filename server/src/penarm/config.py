@@ -4,22 +4,27 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ArmConfig:
-    # Link lengths, joint axis to joint axis / pen tip (mm). PLACEHOLDERS: measure the real arm.
-    l1: float = 100.0
-    l2: float = 130.0
+    # Link lengths, joint axis to joint axis / pen axis (mm), from the CAD in pecas_impressao/*.stl:
+    # shoulder x=20.7 -> elbow x=128.8 -> pencil hole x=243.0 (all on y=8). Ruler-check on the printed arm.
+    l1: float = 108.1
+    l2: float = 114.2
     # Shoulder axis position in page coordinates (mm). Page origin = bottom-left corner of the
     # sheet, x to the right, y away from the arm base. Base sits below the sheet's bottom edge.
-    base_x: float = 105.0
-    base_y: float = -20.0
-    # Page size (mm), A5-ish notebook by default.
-    page_w: float = 148.0
-    page_h: float = 210.0
+    # Measured from an overhead photo of the arm at servos 90/90 (rough, +-5 mm): shoulder axis ~11 cm from the
+    # sheet's left edge and ~2.7 cm below its bottom edge.
+    base_x: float = 110.0
+    base_y: float = -27.0
+    # Page size (mm): spiral notebook sheet, assumed 200 x 275.
+    page_w: float = 200.0
+    page_h: float = 275.0
     # Servo angle (deg) <-> joint angle (deg): joint = sign * (servo - offset).
     # Joint 1 is measured from +x axis (page), joint 2 is relative to link 1.
+    # Photo at servos 90/90: link 1 at 100.4 deg from +x, link 2 at 87.3 deg => joint 2 = -13.1 deg. Signs are
+    # ASSUMED +1 (counter-clockwise as the angle grows): verify with a small move.
     sign1: float = 1.0
-    offset1: float = 90.0
+    offset1: float = -10.4
     sign2: float = 1.0
-    offset2: float = 90.0
+    offset2: float = 103.1
     elbow_up: bool = True  # which of the two IK solutions to use
     seg_mm: float = 1.0  # Cartesian interpolation step for straight lines
     speed_dps: float = 40.0  # servo speed while drawing (deg/s)
