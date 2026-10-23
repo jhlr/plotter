@@ -59,8 +59,19 @@ def canvas_info() -> dict[str, object]:
     """START HERE. The drawing canvas: a rectangle the arm can fully reach, in mm, origin at its bottom-left corner,
     x right, y up. Every drawing tool takes coordinates in this frame; points outside are rejected."""
     c = _arm.canvas
-    return {"width_mm": round(c.w, 1), "height_mm": round(c.h, 1), "pen_up": False,
+    return {"width_mm": round(c.w, 1), "height_mm": round(c.h, 1), "orientation": _arm.orientation, "pen_up": False,
             "calibrated": bool(_store.params), "simulated": _port is None}
+
+
+@mcp.tool()
+@llm_readable_errors
+def set_canvas(orientation: str) -> dict[str, object]:
+    """Choose the drawing area: 'landscape' (default) is a wide, short band; 'portrait' is a tall, narrow rectangle;
+    'portrait_left' / 'portrait_right' put the tall rectangle in the left/right side area of the paper, away from
+    the central band. Coordinates of later drawing tools are in the new canvas. The tip travels to
+    the new area on the next drawing call, touching the paper on the way (no pen-up)."""
+    _arm.set_orientation(orientation)
+    return canvas_info()
 
 
 @mcp.tool()

@@ -95,3 +95,16 @@ def test_store_roundtrip(tmp_path) -> None:  # type: ignore[no-untyped-def]
     again = CalibrationStore(path)
     assert len(again.points) == 8
     assert abs(again.apply(CFG).offset1 - res.cfg.offset1) < 1e-9
+
+
+def test_portrait_canvas_is_tall_reachable_and_side_aware() -> None:
+    from penarm.canvas import portrait_canvas
+
+    left = portrait_canvas(CFG, side="left")
+    right = portrait_canvas(CFG, side="right")
+    assert left.h >= 1.5 * left.w and right.h >= 1.5 * right.w
+    assert left.x0 + left.w / 2 < CFG.page_w / 5 < 4 * CFG.page_w / 5 < right.x0 + right.w / 2
+    for port in (left, right, portrait_canvas(CFG)):
+        for fx in (0.0, 1.0):
+            for fy in (0.0, 0.5, 1.0):
+                page_to_servos(CFG, *port.to_page(fx * port.w, fy * port.h))

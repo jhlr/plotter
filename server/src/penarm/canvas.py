@@ -33,10 +33,41 @@ def _reachable(cfg: ArmConfig, x: float, y: float) -> bool:
     return True
 
 
+def _grid(cfg: ArmConfig, step: float) -> list[list[bool]]:
+    cols, rows = int(cfg.page_w / step) + 1, int(cfg.page_h / step) + 1
+    return [[_reachable(cfg, c * step, r * step) for c in range(cols)] for r in range(rows)]
+
+
+def portrait_canvas(
+    cfg: ArmConfig, step: float = 2.0, margin: float = 3.0, aspect: float = 1.5, side: str | None = None
+) -> Canvas:
+    """Largest-area reachable rectangle at least `aspect` times taller than wide. side='left'/'right' keeps it in
+    that fifth of the page (the arm's side 'wings', away from the central band)."""
+    ok = _grid(cfg, step)
+    rows, cols = len(ok), len(ok[0])
+    best = (0, 0, 0, 0, 0)  # area, left col, bottom row, width cols, height rows
+    for wc in range(3, cols):
+        # run[r][c]: rows of consecutive reachable cells ending at r, across columns c..c+wc-1
+        run = [0] * (cols - wc + 1)
+        for r in range(rows):
+            run = [run[c] + 1 if all(ok[r][c : c + wc]) else 0 for c in range(cols - wc + 1)]
+            for c, hr in enumerate(run):
+                x_mid = (c + wc / 2) * step
+                if side == "left" and x_mid > cfg.page_w / 5 or side == "right" and x_mid < 4 * cfg.page_w / 5:
+                    continue
+                if hr >= aspect * wc and hr * wc > best[0]:
+                    best = (hr * wc, c, r - hr + 1, wc, hr)
+    _, left, bottom, wc, hr = best
+    width_mm, height_mm = (wc - 1) * step - 2 * margin, (hr - 1) * step - 2 * margin
+    if wc == 0 or width_mm <= 0 or height_mm <= 0:
+        raise Unreachable("no portrait area is reachable: check calibration")
+    return Canvas(left * step + margin, bottom * step + margin, width_mm, height_mm)
+
+
 def safe_canvas(cfg: ArmConfig, step: float = 2.0, margin: float = 3.0) -> Canvas:
     """Largest-area rectangle whose grid points are all reachable, shrunk by `margin` mm on every side."""
-    cols, rows = int(cfg.page_w / step) + 1, int(cfg.page_h / step) + 1
-    ok = [[_reachable(cfg, c * step, r * step) for c in range(cols)] for r in range(rows)]
+    ok = _grid(cfg, step)
+    cols, rows = len(ok[0]), len(ok)
     heights = [0] * cols
     best = (0, 0, 0, 0, 0)  # area, left col, bottom row, width cols, height rows
     for r in range(rows):

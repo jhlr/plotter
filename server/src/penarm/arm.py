@@ -1,5 +1,5 @@
 """Owner of the draw cycle: canvas path -> Cartesian interpolation -> IK -> link. Everything else is a primitive."""
-from .canvas import Canvas, safe_canvas
+from .canvas import Canvas, portrait_canvas, safe_canvas
 from .config import ArmConfig
 from .errors import Unreachable
 from .kinematics import fk, interpolate, joints_to_servos, page_to_servos, servos_to_joints
@@ -24,7 +24,19 @@ class Arm:
     def set_config(self, cfg: ArmConfig) -> None:
         """Swap geometry/calibration (e.g. after a fit) and recompute the canvas."""
         self.cfg = cfg
-        self.canvas: Canvas = safe_canvas(cfg)
+        self.orientation = getattr(self, "orientation", "landscape")
+        if self.orientation.startswith("portrait"):
+            side = self.orientation.removeprefix("portrait").lstrip("_") or None
+            self.canvas: Canvas = portrait_canvas(cfg, side=side)
+        else:
+            self.canvas = safe_canvas(cfg)
+
+    def set_orientation(self, orientation: str) -> None:
+        """'landscape' = the wide band (default); 'portrait' = tall rectangle; '_left'/'_right' pick a side area."""
+        if orientation not in ("landscape", "portrait", "portrait_left", "portrait_right"):
+            raise ValueError("orientation must be 'landscape', 'portrait', 'portrait_left' or 'portrait_right'")
+        self.orientation = orientation
+        self.set_config(self.cfg)
 
     def _page_point(self, x: float, y: float) -> tuple[float, float]:
         if not self.canvas.contains(x, y):
