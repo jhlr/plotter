@@ -1,41 +1,37 @@
 import math
 
 import pytest
-from pydantic import TypeAdapter
-
 from penarm.canvas import Canvas
-from penarm.paths import Fit, Op, Transform, apply_transform_fit, strokes_from_ops, svg_to_strokes
+from penarm.paths import apply_transform_fit, strokes_from_ops, svg_to_strokes
 from penarm.preview import ascii_art, describe, stats
 from penarm.shapes import (bbox, ellipse_points, heart_points, hatch_points, polygon_points, spiral_points,
                            star_points, transform_strokes, wave_points)
 
-OPS = TypeAdapter(list[Op])
-
-
-def ops(*items: dict) -> list:  # type: ignore[type-arg]
-    return OPS.validate_python(list(items))
-
-
 def test_ops_build_one_stroke_and_close_it() -> None:
-    s = strokes_from_ops(ops({"op": "move", "to": [0, 0]}, {"op": "line", "to": [10, 0]},
-                             {"op": "bezier", "c1": [12, 3], "c2": [12, 7], "to": [10, 10]}, {"op": "close"}))
+    s = strokes_from_ops(["move 0 0", "line 10 0", "bezier 12 3 12 7 10 10", "close"])
     assert len(s) == 1 and s[0][0] == s[0][-1] and len(s[0]) > 10
 
 
+def test_ops_accept_commas_and_any_case() -> None:
+    s = strokes_from_ops(["MOVE 0,0", "Line 5, 0", "arc 5 5 5 -90 90"])
+    assert len(s) == 1 and s[0][1] == (5.0, 0.0)
+
+
 def test_move_starts_a_new_stroke() -> None:
-    s = strokes_from_ops(ops({"op": "move", "to": [0, 0]}, {"op": "line", "to": [5, 0]},
-                             {"op": "move", "to": [0, 9]}, {"op": "line", "to": [5, 9]}))
-    assert len(s) == 2
+    assert len(strokes_from_ops(["move 0 0", "line 5 0", "move 0 9", "line 5 9"])) == 2
 
 
-def test_line_without_move_is_a_readable_error() -> None:
-    with pytest.raises(ValueError, match="start with a 'move'"):
-        strokes_from_ops(ops({"op": "line", "to": [1, 1]}))
-
-
-def test_unknown_op_is_rejected_by_the_schema() -> None:
-    with pytest.raises(Exception):
-        ops({"op": "teleport", "to": [1, 1]})
+@pytest.mark.parametrize("ops,message", [
+    (["line 1 1"], "start with a 'move'"),
+    (["move 0"], "expected move x y"),
+    (["teleport 1 1"], "unknown operation"),
+    (["move a b"], "must be numbers"),
+    (["move 0 0", "arc 1 2 3"], "expected arc cx cy r a0 a1"),
+    ([], "no drawable"),
+])
+def test_bad_ops_are_readable_errors(ops: list[str], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        strokes_from_ops(ops)
 
 
 def test_svg_triangle_is_closed_with_the_right_length() -> None:
@@ -52,16 +48,20 @@ def test_svg_relative_curves_and_bad_data() -> None:
 
 
 def test_fit_centers_and_keeps_aspect() -> None:
-    out = apply_transform_fit([[(0, 0), (10, 0), (10, 5)]], None, Fit(x=100, y=50, width=40, height=40, margin=2))
+    out = apply_transform_fit([[(0, 0), (10, 0), (10, 5)]], fit_box=[100, 50, 40, 40], fit_margin=2)
     x0, y0, x1, y1 = bbox(out)
     assert abs((x1 - x0) - 36) < 1e-9 and abs((y1 - y0) - 18) < 1e-9  # width-limited, aspect kept
     assert abs((y0 + y1) / 2 - 70) < 1e-9 and abs((x0 + x1) / 2 - 120) < 1e-9
 
 
 def test_transform_rotates_about_a_point_and_mirrors() -> None:
-    out = apply_transform_fit([[(10, 0)]], Transform(rotate_deg=90), None)
+    out = transform_strokes([[(10.0, 0.0)]], rotate_deg=90)
     assert abs(out[0][0][0]) < 1e-9 and abs(out[0][0][1] - 10) < 1e-9
-    assert transform_strokes([[(3, 4)]], mirror_x=True)[0][0] == (-3, 4)
+    assert transform_strokes([[(3.0, 4.0)]], mirror_x=True)[0][0] == (-3.0, 4.0)
+    # through the portable entry point: pivots on the drawing's own center, not on the origin
+    square = [[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]]
+    x0, y0, x1, y1 = bbox(apply_transform_fit(square, rotate_deg=90, translate_x=100.0))
+    assert abs((x0 + x1) / 2 - 105.0) < 1e-9 and abs((y0 + y1) / 2 - 5.0) < 1e-9
 
 
 def test_shapes() -> None:

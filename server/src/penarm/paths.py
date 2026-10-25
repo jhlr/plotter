@@ -1,107 +1,64 @@
-"""One trajectory language for the LLM: typed path operations, SVG paths and transforms -> strokes (mm polylines)."""
+"""One trajectory language for the LLM, portable across providers (plain strings and numbers, no nested schemas):
+path operations as short text lines, SVG path data, and transform/fit -> strokes (mm polylines)."""
 import math
-from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
 from svgelements import Move
 from svgelements import Path as SvgPath
 
-from .shapes import (Point, Stroke, arc_points, bezier_points, fit_strokes, quad_points, transform_strokes)
+from .shapes import Point, Stroke, arc_points, bbox, bezier_points, fit_strokes, quad_points, transform_strokes
 
-XY = tuple[float, float]
-
-
-class MoveOp(BaseModel):
-    """Start a new stroke at a point. Without pen-up hardware the tip still travels there touching the paper."""
-    op: Literal["move"]
-    to: XY
-
-
-class LineOp(BaseModel):
-    op: Literal["line"]
-    to: XY
+# operation -> (number of numeric arguments, what they are)
+OPS_HELP = {
+    "move": (2, "move x y            start a new stroke at (x, y)"),
+    "line": (2, "line x y            straight line to (x, y)"),
+    "arc": (5, "arc cx cy r a0 a1    circular arc, angles in degrees from +x, counter-clockwise if a1 > a0"),
+    "bezier": (6, "bezier x1 y1 x2 y2 x y   cubic Bezier from the current point (two control points, then the end)"),
+    "quad": (4, "quad cx cy x y      quadratic Bezier from the current point (control point, then the end)"),
+    "close": (0, "close              line back to the stroke's first point"),
+}
 
 
-class ArcOp(BaseModel):
-    """Circular arc (degrees from +x, counter-clockwise if end > start). A line joins it if the pen is elsewhere."""
-    op: Literal["arc"]
-    center: XY
-    radius: float
-    start_deg: float
-    end_deg: float
+def parse_ops(ops: list[str]) -> list[tuple[str, list[float]]]:
+    parsed: list[tuple[str, list[float]]] = []
+    for i, line in enumerate(ops):
+        tokens = line.replace(",", " ").split()
+        if not tokens:
+            raise ValueError(f"op {i} is empty")
+        name = tokens[0].lower()
+        if name not in OPS_HELP:
+            raise ValueError(f"op {i} '{line}': unknown operation '{tokens[0]}'; use one of {sorted(OPS_HELP)}")
+        try:
+            nums = [float(t) for t in tokens[1:]]
+        except ValueError:
+            raise ValueError(f"op {i} '{line}': arguments must be numbers") from None
+        if len(nums) != OPS_HELP[name][0]:
+            raise ValueError(f"op {i} '{line}': expected {OPS_HELP[name][1].strip()}")
+        parsed.append((name, nums))
+    return parsed
 
 
-class BezierOp(BaseModel):
-    """Cubic Bezier from the current point."""
-    op: Literal["bezier"]
-    c1: XY
-    c2: XY
-    to: XY
-
-
-class QuadOp(BaseModel):
-    """Quadratic Bezier from the current point."""
-    op: Literal["quad"]
-    c: XY
-    to: XY
-
-
-class CloseOp(BaseModel):
-    """Line back to the stroke's first point."""
-    op: Literal["close"]
-
-
-Op = Annotated[MoveOp | LineOp | ArcOp | BezierOp | QuadOp | CloseOp, Field(discriminator="op")]
-
-
-class Transform(BaseModel):
-    """Applied after the ops: mirror, then scale and rotate about `about`, then translate (canvas mm)."""
-    scale: float = 1.0
-    rotate_deg: float = 0.0
-    translate: XY = (0.0, 0.0)
-    about: XY = (0.0, 0.0)
-    mirror_x: bool = False
-    mirror_y: bool = False
-
-
-class Fit(BaseModel):
-    """Scale and move the whole drawing into the box (x, y, width, height), centered, inside `margin` mm."""
-    x: float
-    y: float
-    width: float
-    height: float
-    margin: float = 0.0
-    keep_aspect: bool = True
-
-
-def strokes_from_ops(ops: list[Op], seg_mm: float = 1.0) -> list[Stroke]:
+def strokes_from_ops(ops: list[str], seg_mm: float = 1.0) -> list[Stroke]:
     strokes: list[Stroke] = []
     cur: Stroke = []
-
-    def need_start(op: str) -> None:
-        if not cur:
-            raise ValueError(f"'{op}' needs a current point: start with a 'move' op")
-
-    for o in ops:
-        if isinstance(o, MoveOp):
+    for name, n in parse_ops(ops):
+        if name == "move":
             if len(cur) > 1:
                 strokes.append(cur)
-            cur = [o.to]
-        elif isinstance(o, LineOp):
-            need_start("line")
-            cur.append(o.to)
-        elif isinstance(o, ArcOp):
-            arc = arc_points(*o.center, o.radius, o.start_deg, o.end_deg)
+            cur = [(n[0], n[1])]
+        elif name == "arc":
+            arc = arc_points(n[0], n[1], n[2], n[3], n[4])
             cur = cur + arc if cur else arc
-        elif isinstance(o, BezierOp):
-            need_start("bezier")
-            cur += bezier_points(cur[-1], o.c1, o.c2, o.to, seg_mm)[1:]
-        elif isinstance(o, QuadOp):
-            need_start("quad")
-            cur += quad_points(cur[-1], o.c, o.to, seg_mm)[1:]
-        elif isinstance(o, CloseOp):
-            need_start("close")
-            cur.append(cur[0])
+        else:
+            if not cur:
+                raise ValueError(f"'{name}' needs a current point: start with a 'move' op")
+            if name == "line":
+                cur.append((n[0], n[1]))
+            elif name == "bezier":
+                cur += bezier_points(cur[-1], (n[0], n[1]), (n[2], n[3]), (n[4], n[5]), seg_mm)[1:]
+            elif name == "quad":
+                cur += quad_points(cur[-1], (n[0], n[1]), (n[2], n[3]), seg_mm)[1:]
+            else:  # close
+                cur.append(cur[0])
     if len(cur) > 1:
         strokes.append(cur)
     if not strokes:
@@ -109,13 +66,27 @@ def strokes_from_ops(ops: list[Op], seg_mm: float = 1.0) -> list[Stroke]:
     return strokes
 
 
-def apply_transform_fit(strokes: list[Stroke], transform: Transform | None, fit: Fit | None) -> list[Stroke]:
-    if transform:
-        strokes = transform_strokes(strokes, transform.scale, transform.rotate_deg, transform.translate,
-                                    transform.about, transform.mirror_x, transform.mirror_y)
-    if fit:
-        strokes = fit_strokes(strokes, fit.x, fit.y, fit.width, fit.height, fit.margin, fit.keep_aspect)
+def apply_transform_fit(
+    strokes: list[Stroke], scale: float = 1.0, rotate_deg: float = 0.0, translate_x: float = 0.0, translate_y: float = 0.0,
+    mirror_x: bool = False, mirror_y: bool = False, fit_box: list[float] | None = None, fit_margin: float = 0.0,
+) -> list[Stroke]:
+    """Mirror, scale and rotate about the drawing's center, translate; then optionally fit into [x, y, width, height]."""
+    if (scale, rotate_deg, translate_x, translate_y, mirror_x, mirror_y) != (1.0, 0.0, 0.0, 0.0, False, False):
+        x0, y0, x1, y1 = bbox(strokes)
+        strokes = transform_strokes(strokes, scale, rotate_deg, (translate_x, translate_y),
+                                    ((x0 + x1) / 2, (y0 + y1) / 2), mirror_x, mirror_y)
+    if fit_box:
+        if len(fit_box) != 4:
+            raise ValueError("fit_box must be [x, y, width, height]")
+        bx, by, bw, bh = fit_box
+        strokes = fit_strokes(strokes, bx, by, bw, bh, margin=fit_margin)
     return strokes
+
+
+def point(p: list[float], what: str = "point") -> Point:
+    if len(p) != 2:
+        raise ValueError(f"{what} must be [x, y], got {p}")
+    return float(p[0]), float(p[1])
 
 
 def svg_to_strokes(d: str, seg_mm: float = 1.0) -> list[Stroke]:
@@ -143,6 +114,3 @@ def svg_to_strokes(d: str, seg_mm: float = 1.0) -> list[Stroke]:
     if not strokes:
         raise ValueError("SVG path has no drawable segments")
     return strokes
-
-
-__all__ = ["Op", "Transform", "Fit", "Point", "strokes_from_ops", "apply_transform_fit", "svg_to_strokes"]

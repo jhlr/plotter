@@ -6,11 +6,10 @@ import functools
 import math
 import os
 from collections.abc import Callable
-from typing import Annotated, ParamSpec, TypeVar
+from typing import ParamSpec, TypeVar
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from pydantic import BaseModel, Field
 
 from .arm import Arm
 from .calibration import CalibrationStore, Observation, corner_sanity, paper_point_from_photo, suggest_poses
@@ -18,7 +17,7 @@ from .config import DEFAULT
 from .errors import Busy, Unreachable, VisionError
 from .jobs import JobRunner
 from .link import Link, SerialLink, SimLink
-from .paths import Fit, Op, Transform, apply_transform_fit, strokes_from_ops, svg_to_strokes
+from .paths import OPS_HELP, apply_transform_fit, point, strokes_from_ops, svg_to_strokes
 from .preview import describe
 from .shapes import (Stroke, arc_points, bbox, bezier_points, ellipse_points, fit_strokes, heart_points, hatch_points,
                      polygon_points, rect_points, spiral_points, star_points, transform_strokes, wave_points)
@@ -26,6 +25,7 @@ from .shapes import (Stroke, arc_points, bbox, bezier_points, ellipse_points, fi
 P = ParamSpec("P")
 R = TypeVar("R")
 XY = tuple[float, float]
+Pt = list[float]  # a point as [x, y]: plain arrays keep every provider's function-calling schema valid
 
 
 def llm_readable_errors(fn: Callable[P, R]) -> Callable[P, R]:
@@ -41,7 +41,18 @@ def llm_readable_errors(fn: Callable[P, R]) -> Callable[P, R]:
     return wrapper
 
 
-mcp = MCPServer("penarm")
+GUIDE = """\
+A two-servo pen-plotter arm. Provider-neutral usage guide:
+1. Call canvas_info first: the reachable canvas in mm (origin bottom-left, x right, y up). All drawing tools use it.
+2. The pencil has no pen-up: draw one continuous trace; travel between strokes marks the paper.
+3. Prefer the highest-level tool: draw_shape (named shapes), draw_svg_path (SVG path data fitted into a box),
+   draw_path (text ops + fit_box), then draw_polyline / draw_line / draw_bezier.
+4. For anything non-trivial call the tool with dry_run=true first (bbox, length, time, ASCII thumbnail, SVG), then draw.
+5. A drawing returns a job_id if it takes long: poll job_status; call stop() to cancel. One job at a time.
+6. Points are plain [x, y] arrays; optional arguments use defaults (0, empty list, empty string), never null.
+"""
+
+mcp = MCPServer("penarm", instructions=GUIDE)
 _port = os.environ.get("PENARM_PORT")
 _link: Link = SerialLink(_port) if _port else SimLink()
 _store = CalibrationStore()
@@ -121,47 +132,52 @@ def set_canvas(orientation: str) -> dict[str, object]:
 @mcp.tool()
 @llm_readable_errors
 def draw_path(
-    ops: list[Op], transform: Transform | None = None, fit: Fit | None = None, dry_run: bool = False
+    ops: list[str], scale: float = 1.0, rotate_deg: float = 0.0, translate_x: float = 0.0, translate_y: float = 0.0,
+    mirror_x: bool = False, mirror_y: bool = False, fit_box: list[float] = [], fit_margin: float = 0.0,
+    dry_run: bool = False,
 ) -> dict[str, object]:
-    """THE GENERAL TOOL. Draw a path made of operations: {"op":"move","to":[x,y]} starts a stroke, then "line",
-    "arc" (center, radius, start_deg, end_deg), "bezier" (c1, c2, to), "quad" (c, to), "close". Optional
-    `transform` (mirror, scale, rotate about a point, translate) and `fit` (scale the whole drawing into a box,
-    centered) are applied after the ops, so you can design in any units and let `fit` place it on the canvas.
-    dry_run=true plans only and returns bbox, length, estimated time, an ASCII thumbnail and an SVG."""
-    strokes = apply_transform_fit(strokes_from_ops(ops, _arm.cfg.seg_mm), transform, fit)
+    """THE GENERAL TOOL. Draw a path given as a list of text operations, one per string:
+    "move x y" starts a stroke; "line x y"; "arc cx cy r a0 a1" (degrees from +x, counter-clockwise if a1 > a0);
+    "bezier x1 y1 x2 y2 x y"; "quad cx cy x y"; "close". Example: ["move 0 0", "line 20 0", "arc 20 5 5 -90 90", "close"].
+    Optional: mirror, then scale and rotate_deg about the drawing's center, then translate; fit_box=[x, y, width, height]
+    scales the whole drawing into that box (centered, inside fit_margin mm), so you can design in any units and let it
+    be placed on the canvas. dry_run=true plans only and returns bbox, length, estimated time, an ASCII thumbnail and
+    an SVG, and moves nothing."""
+    strokes = apply_transform_fit(strokes_from_ops(ops, _arm.cfg.seg_mm), scale, rotate_deg, translate_x, translate_y,
+                                  mirror_x, mirror_y, fit_box or None, fit_margin)
     return _submit(strokes, "draw_path", dry_run)
 
 
 @mcp.tool()
 @llm_readable_errors
 def draw_svg_path(
-    d: str, x: float, y: float, width: float, height: float | None = None, margin: float = 0.0, dry_run: bool = False
+    d: str, x: float, y: float, width: float, height: float = 0.0, margin: float = 0.0, dry_run: bool = False
 ) -> dict[str, object]:
     """Draw an SVG path (the `d` attribute: M L H V C S Q T A Z, absolute or relative). Its bounding box is scaled
-    to `width` mm (and `height` if given, otherwise keeping the aspect) and placed with the bottom-left corner at
+    to `width` mm (and `height` if > 0, otherwise keeping the aspect) and placed with the bottom-left corner at
     (x, y) on the canvas. SVG's y axis points down; it is flipped for you. Subpaths are joined by straight lines
     (no pen-up yet)."""
     raw = svg_to_strokes(d, 1.0)
     flipped = [[(px, -py) for px, py in s] for s in raw]
     x0, y0, x1, y1 = bbox(flipped)
-    h = height if height is not None else width * (y1 - y0) / max(x1 - x0, 1e-9)
-    strokes = fit_strokes(flipped, x, y, width, h, margin, keep_aspect=height is None)
+    h = height if height > 0 else max(width * (y1 - y0) / max(x1 - x0, 1e-9), 1.0)  # a flat path still gets a box
+    strokes = fit_strokes(flipped, x, y, width, h, margin, keep_aspect=height <= 0)
     return _submit(strokes, "draw_svg_path", dry_run)
 
 
 @mcp.tool()
 @llm_readable_errors
 def draw_shape(
-    kind: str, cx: float, cy: float, size: float, size2: float | None = None, sides: int = 5, turns: float = 3.0,
+    kind: str, cx: float, cy: float, size: float, size2: float = 0.0, sides: int = 5, turns: float = 3.0,
     rotation_deg: float = 0.0, dry_run: bool = False,
 ) -> dict[str, object]:
     """Draw a named shape centered at (cx, cy). kind: circle (size = diameter), ellipse (size = width, size2 = height),
     rectangle (size = width, size2 = height), square (size = side), polygon (size = diameter, sides), triangle (size =
     diameter), star (size = outer diameter, sides = tips), spiral (size = outer diameter, turns), heart (size = width),
-    hatch (size = width, size2 = height: back-and-forth fill), wave (size = length, size2 = amplitude, turns = cycles).
+    hatch (size = width, size2 = height: back-and-forth fill), wave (size = length, size2 = amplitude, turns = cycles). size2 = 0 means "same as size" (or the default amplitude for wave).
     rotation_deg rotates it about its center (counter-clockwise)."""
     r = size / 2
-    h2 = size2 if size2 is not None else size
+    h2 = size2 if size2 > 0 else size
     builders: dict[str, Callable[[], Stroke]] = {
         "circle": lambda: arc_points(cx, cy, r, 0.0, 360.0),
         "ellipse": lambda: ellipse_points(cx, cy, size / 2, h2 / 2),
@@ -173,7 +189,7 @@ def draw_shape(
         "spiral": lambda: spiral_points(cx, cy, 0.5, r, turns),
         "heart": lambda: heart_points(cx, cy, size),
         "hatch": lambda: hatch_points(cx - size / 2, cy - h2 / 2, size, h2, 2.0),
-        "wave": lambda: wave_points((cx - size / 2, cy), (cx + size / 2, cy), h2 if size2 is not None else size / 8, turns),
+        "wave": lambda: wave_points((cx - size / 2, cy), (cx + size / 2, cy), h2 if size2 > 0 else size / 8, turns),
     }
     if kind not in builders:
         raise ValueError(f"unknown shape '{kind}'; choose one of {sorted(builders)}")
@@ -185,10 +201,10 @@ def draw_shape(
 
 @mcp.tool()
 @llm_readable_errors
-def draw_polyline(points: list[XY], dry_run: bool = False) -> dict[str, object]:
-    """Draw connected straight segments through points [(x, y), ...]. Prefer draw_path / draw_shape / draw_svg_path
+def draw_polyline(points: list[Pt], dry_run: bool = False) -> dict[str, object]:
+    """Draw connected straight segments through points [[x, y], ...]. Prefer draw_path / draw_shape / draw_svg_path
     for anything that is not a plain polyline."""
-    return _submit([list(points)], "draw_polyline", dry_run)
+    return _submit([[point(p) for p in points]], "draw_polyline", dry_run)
 
 
 @mcp.tool()
@@ -200,9 +216,10 @@ def draw_line(x1: float, y1: float, x2: float, y2: float, dry_run: bool = False)
 
 @mcp.tool()
 @llm_readable_errors
-def draw_bezier(p0: XY, p1: XY, p2: XY, p3: XY, dry_run: bool = False) -> dict[str, object]:
-    """Draw a cubic Bezier curve from p0 to p3 with control points p1 and p2."""
-    return _submit([bezier_points(p0, p1, p2, p3, _arm.cfg.seg_mm)], "draw_bezier", dry_run)
+def draw_bezier(p0: Pt, p1: Pt, p2: Pt, p3: Pt, dry_run: bool = False) -> dict[str, object]:
+    """Draw a cubic Bezier curve from p0 to p3 with control points p1 and p2 (each point is [x, y])."""
+    stroke = bezier_points(point(p0, "p0"), point(p1, "p1"), point(p2, "p2"), point(p3, "p3"), _arm.cfg.seg_mm)
+    return _submit([stroke], "draw_bezier", dry_run)
 
 
 @mcp.tool()
@@ -217,9 +234,9 @@ def move_to(x: float, y: float) -> dict[str, object]:
 
 @mcp.tool()
 @llm_readable_errors
-def job_status(job_id: str | None = None) -> dict[str, object]:
-    """Status of a drawing job (the latest if job_id is omitted): running | done | cancelled | error, progress, seconds."""
-    return _jobs.get(job_id).summary()
+def job_status(job_id: str = "") -> dict[str, object]:
+    """Status of a drawing job (the latest if job_id is empty): running | done | cancelled | error, progress, seconds."""
+    return _jobs.get(job_id or None).summary()
 
 
 @mcp.tool()
@@ -255,14 +272,6 @@ def locate_pencil() -> dict[str, object]:
 
 if os.environ.get("PENARM_MODE") == "calibrate":
 
-    class PaperCorners(BaseModel):
-        """Pixel positions of the paper's four corners in the photo, named from the ARM's point of view: 'near' is the
-        edge closest to the arm's base, 'left'/'right' as seen standing at the base looking toward the far edge."""
-        near_left: XY
-        near_right: XY
-        far_right: XY
-        far_left: XY
-
     @mcp.tool()
     @llm_readable_errors
     def set_paper(width_mm: float, height_mm: float) -> dict[str, object]:
@@ -277,25 +286,28 @@ if os.environ.get("PENARM_MODE") == "calibrate":
     @mcp.tool()
     @llm_readable_errors
     def record_photo_observation(
-        corners: PaperCorners, point_px: XY, note: str = ""
+        near_left: Pt, near_right: Pt, far_right: Pt, far_left: Pt, point_px: Pt, note: str = ""
     ) -> dict[str, object]:
-        """Register where the tip is on the paper from ONE photo: give the paper's four corners and the pixel of the
+        """Register where the tip is on the paper from ONE photo. Corners are pixel positions [x, y] of the paper's four
+        corners, named from the ARM's point of view: 'near' is the edge closest to the arm's base, 'left'/'right' as seen
+        standing at the base looking toward the far edge. point_px is the pixel [x, y] of the
         tip's contact point on the PAPER (an ink dot or the pen tip touching it; not the pen top or the holder, which
         sit above the paper and shift with perspective). Uses the servo angles the board reports now. Take several
         photos at different poses (goto_servos), then call fit_calibration."""
-        cs: dict[str, XY] = {k: (v[0], v[1]) for k, v in corners.model_dump().items()}
+        cs: dict[str, XY] = {"near_left": point(near_left), "near_right": point(near_right),
+                             "far_right": point(far_right), "far_left": point(far_left)}
         warn = corner_sanity(cs)
         w, h = _arm.cfg.page_w, _arm.cfg.page_h
-        x, y = paper_point_from_photo(cs, point_px, w, h)
+        x, y = paper_point_from_photo(cs, point(point_px), w, h)
         _, _, s1, s2 = _link.read()
         _store.add_point(Observation(s1, s2, x, y))
         return {"tip_paper_mm": _round((x, y)), "servo_deg": (s1, s2), "estimated_by_current_model_mm": _round(_arm.tip_fk()),
                 "points": len(_store.points), "warnings": warn, "note": note}
 
     @mcp.tool()
-    def calibration_poses() -> list[XY]:
+    def calibration_poses() -> list[list[float]]:
         """Servo poses (s1, s2) to visit for calibration, spread over the workspace."""
-        return suggest_poses(_arm.cfg)
+        return [list(p) for p in suggest_poses(_arm.cfg)]
 
     @mcp.tool()
     @llm_readable_errors
@@ -316,11 +328,11 @@ if os.environ.get("PENARM_MODE") == "calibrate":
 
     @mcp.tool()
     @llm_readable_errors
-    def fit_calibration(scope: str = "pose", last: int | None = None) -> dict[str, object]:
+    def fit_calibration(scope: str = "pose", last: int = 0) -> dict[str, object]:
         """Fit the recorded points. scope: 'base' (the PAPER MOVED: only the base position, needs >= 1 point, use
-        last=N for the newest photos), 'pose' (offsets, signs and base, >= 4 points), 'full' (also link lengths, >= 7).
+        last=N for the newest N photos; 0 = all), 'pose' (offsets, signs and base, >= 4 points), 'full' (also link lengths, >= 7).
         Saves calibration.json and applies it; returns the residual in mm per point."""
-        res = _store.fit(_arm.cfg, scope, last)
+        res = _store.fit(_arm.cfg, scope, last or None)
         _arm.set_config(res.cfg)
         c = _arm.canvas
         return {"rmse_mm": round(res.rmse_mm, 2), "points": res.n, "canvas_mm": (round(c.w), round(c.h)),

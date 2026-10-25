@@ -4,6 +4,11 @@
 //   V <deg/s>    -> set max servo speed            -> "OK"
 //   A <s1> <s2>  -> go to servo angles (deg, 0-180), ramped; "OK" once reached
 //   R            -> "R <adc1> <adc2> <s1> <s2>"    (raw ADC, 0..adcmax; current servo angles)
+// Execution queue (the board keeps drawing without the host, which only has to stay ahead of it):
+//   Q <seq> <s1> <s2> -> append a waypoint; "OK <free>", "FULL", or "ERR seq <expected>". Idempotent: a resend of the last
+//                        accepted <seq> is acknowledged without queueing it twice.
+//   S            -> "S <next_seq> <executed> <queued> <free> <moving>"   (executed wraps at 65536)
+//   X            -> abort: clear the queue and hold the current pose      -> "OK <next_seq>"
 // Boots at HOME, or on the Uno at the last resting pose saved in EEPROM (see PERSIST_POSE in config.h).
 #include "config.h"
 #if PERSIST_POSE
@@ -25,6 +30,15 @@ uint16_t bootNumber = 0;
 uint32_t idleLimitMs = 0;  // 0 = never release
 uint32_t lastCommandMs = 0;
 bool attached = false;
+
+struct Waypoint {
+  int16_t a, b;  // centi-degrees
+};
+Waypoint queueBuf[QUEUE_SIZE];
+uint16_t qHead = 0, qCount = 0;
+uint16_t nextSeq = 0;         // sequence number the next Q must carry
+uint16_t executed = 0;        // waypoints reached (wraps at 65536)
+bool arrivalPending = false;  // the current target came from the queue and has not been reached yet
 String line;
 
 #if PERSIST_POSE
@@ -66,7 +80,8 @@ void attachServos() {
 
 void releaseWhenIdle() {
   // A silent host (crashed, unplugged, forgotten) should not leave the servos buzzing and the pen pressing the paper.
-  if (attached && idleLimitMs && !ackPending && millis() - lastCommandMs > idleLimitMs) {
+  if (attached && idleLimitMs && !ackPending && qCount == 0 && !arrivalPending &&
+      millis() - lastCommandMs > idleLimitMs) {
     servo1.detach();
     servo2.detach();
     attached = false;
@@ -96,13 +111,32 @@ void stepMotion() {
     }
   }
   writeServos();
-  if (!moving && ackPending) {
-    Serial.println("OK");
-    ackPending = false;
+  if (!moving) {
+    if (arrivalPending) {
+      arrivalPending = false;
+      executed++;
 #if PERSIST_POSE
-    poseDirty = true;
-    arrivedAt = now;
+      if (qCount == 0) {
+        poseDirty = true;
+        arrivedAt = now;
+      }
 #endif
+    }
+    if (ackPending) {
+      Serial.println("OK");
+      ackPending = false;
+#if PERSIST_POSE
+      poseDirty = true;
+      arrivedAt = now;
+#endif
+    } else if (qCount > 0) {  // next waypoint
+      Waypoint w = queueBuf[qHead];
+      qHead = (qHead + 1) % QUEUE_SIZE;
+      qCount--;
+      tgt[0] = w.a / 100.0f;
+      tgt[1] = w.b / 100.0f;
+      arrivalPending = true;
+    }
   }
 }
 
@@ -123,7 +157,56 @@ void handle(const String& cmd) {
     if (v < 1.0f || v > 300.0f) { Serial.println("ERR speed"); return; }
     maxSpeed = v;
     Serial.println("OK");
+  } else if (cmd.startsWith("Q ")) {
+    // Q <seq> <a> <b>; AVR's sscanf has no float support, so split by hand
+    int s1 = cmd.indexOf(' ', 2);
+    int s2 = s1 < 0 ? -1 : cmd.indexOf(' ', s1 + 1);
+    if (s1 < 0 || s2 < 0) { Serial.println("ERR queue"); return; }
+    uint16_t seq = (uint16_t)cmd.substring(2, s1).toInt();
+    float a = cmd.substring(s1 + 1, s2).toFloat();
+    float b = cmd.substring(s2 + 1).toFloat();
+    if (a < 0 || a > 180 || b < 0 || b > 180) { Serial.println("ERR angles"); return; }
+    if (seq == (uint16_t)(nextSeq - 1)) {  // the reply to this one was lost and the host resent it
+      Serial.print("OK ");
+      Serial.println(QUEUE_SIZE - qCount);
+      return;
+    }
+    if (seq != nextSeq) {
+      Serial.print("ERR seq ");
+      Serial.println(nextSeq);
+      return;
+    }
+    if (qCount >= QUEUE_SIZE) { Serial.println("FULL"); return; }
+    if (!attached) {
+      writeServos();
+      attachServos();
+    }
+    queueBuf[(qHead + qCount) % QUEUE_SIZE] = Waypoint{(int16_t)lroundf(a * 100.0f), (int16_t)lroundf(b * 100.0f)};
+    qCount++;
+    nextSeq++;
+    Serial.print("OK ");
+    Serial.println(QUEUE_SIZE - qCount);
+  } else if (cmd == "S") {
+    Serial.print("S ");
+    Serial.print(nextSeq);
+    Serial.print(' ');
+    Serial.print(executed);
+    Serial.print(' ');
+    Serial.print(qCount);
+    Serial.print(' ');
+    Serial.print(QUEUE_SIZE - qCount);
+    Serial.print(' ');
+    Serial.println(moving || arrivalPending ? 1 : 0);
+  } else if (cmd == "X") {
+    qCount = 0;
+    arrivalPending = false;
+    ackPending = false;
+    tgt[0] = cur[0];
+    tgt[1] = cur[1];
+    Serial.print("OK ");
+    Serial.println(nextSeq);
   } else if (cmd.startsWith("A ")) {
+    if (qCount > 0 || arrivalPending) { Serial.println("ERR busy"); return; }
     // AVR's sscanf has no float support, so split by hand
     int sp = cmd.indexOf(' ', 2);
     float a = cmd.substring(2, sp).toFloat();

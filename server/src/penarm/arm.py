@@ -70,32 +70,41 @@ class Arm:
                 prev = p
         return pages
 
-    def _move_page(self, target: tuple[float, float], should_cancel: Callable[[], bool] | None) -> None:
-        pts = interpolate(self.pos, target, self.cfg.seg_mm) if self.pos else [target]
-        for px, py in pts:
-            if should_cancel and should_cancel():
-                raise Cancelled()
-            self.link.move(*page_to_servos(self.cfg, px, py))
-            self.pos = (px, py)
-        self.pos = target
+    def _servo_waypoints(self, pages: list[Stroke]) -> list[tuple[float, float]]:
+        out: list[tuple[float, float]] = []
+        prev = self.pos
+        for stroke in pages:
+            for p in stroke:
+                out += [page_to_servos(self.cfg, *q) for q in interpolate(prev or p, p, self.cfg.seg_mm)]
+                prev = p
+        return out
+
+    def _pos_from_board(self) -> None:
+        """After a cancel or a failure the arm is wherever the board says: take it from there, not from the plan."""
+        try:
+            self.pos = self.tip_fk()
+            page_to_servos(self.cfg, *self.pos)
+        except (Unreachable, TimeoutError, RuntimeError, ValueError):
+            self.pos = None
 
     def draw_strokes(
         self, strokes: list[Stroke], should_cancel: Callable[[], bool] | None = None,
         progress: Callable[[int, int], None] | None = None,
     ) -> None:
-        """Draw canvas strokes in order. With no pen-up the tip travels between strokes touching the paper."""
+        """Draw canvas strokes in order. The waypoints go to the board's execution queue (see Link.run_path), so the
+        arm keeps moving even if the host link hiccups. With no pen-up the tip travels between strokes touching the paper."""
         pages = self.plan(strokes)
         if getattr(self.link, "resets", 0) != self._generation:
             self._generation = getattr(self.link, "resets", 0)
             self._resync()
             pages = self.plan(strokes)  # the start pose changed: re-validate the travel
-        total, done = sum(len(s) for s in pages), 0
-        for s in pages:
-            for p in s:
-                self._move_page(p, should_cancel)
-                done += 1
-                if progress:
-                    progress(done, total)
+        waypoints = self._servo_waypoints(pages)
+        try:
+            self.link.run_path(waypoints, should_cancel, progress)
+        except BaseException:
+            self._pos_from_board()
+            raise
+        self.pos = pages[-1][-1]
 
     def move_to(self, x: float, y: float) -> None:
         self.draw_strokes([[(x, y)]])

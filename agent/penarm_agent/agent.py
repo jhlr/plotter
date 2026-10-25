@@ -24,7 +24,8 @@ Rules:
 3. Pick the highest-level tool that fits, and never hand-compute long polylines:
    draw_shape for named shapes (circle, rectangle, star, spiral, heart, wave, ...), draw_svg_path for anything you
    can write as SVG path data (it is scaled into a box you give and the y axis is flipped for you), draw_path for
-   custom geometry (move/line/arc/bezier/quad/close, then `fit` to place it on the canvas).
+   custom geometry (text ops such as "move 0 0", "line 20 0", "arc cx cy r a0 a1", "bezier ...", "close"; then
+   `fit_box` to place it on the canvas).
 4. For anything non-trivial call the tool with dry_run=true first: read inside_canvas, length_mm, est_seconds and
    the ASCII thumbnail, adjust, then draw for real. If a drawing does not fit, shrink it or use `fit`; do not
    retry the same coordinates.
