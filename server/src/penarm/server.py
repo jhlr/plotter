@@ -5,8 +5,10 @@ call waits for its job before returning a job id to poll."""
 import functools
 import math
 import os
+import tempfile
 from collections.abc import Callable
-from typing import ParamSpec, TypeVar
+from pathlib import Path
+from typing import TYPE_CHECKING, ParamSpec, TypeVar
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -19,6 +21,9 @@ from .jobs import JobRunner
 from .link import Link, SerialLink, SimLink
 from .paths import OPS_HELP, apply_transform_fit, point, strokes_from_ops, svg_to_strokes
 from .preview import describe
+if TYPE_CHECKING:  # photocv needs OpenCV, an optional extra: imported only when a photo tool runs
+    from .photocv import PhotoAnalysis
+
 from .shapes import (Stroke, arc_points, bbox, bezier_points, ellipse_points, fit_strokes, heart_points, hatch_points,
                      polygon_points, rect_points, spiral_points, star_points, transform_strokes, wave_points)
 
@@ -268,6 +273,20 @@ def locate_pencil() -> dict[str, object]:
             "error_mm": round(math.dist((fix.x_mm, fix.y_mm), fk_page), 1)}
 
 
+def _analyze_file(image_path: str) -> tuple["PhotoAnalysis", str]:
+    from .photocv import analyze
+
+    path = Path(image_path).expanduser()
+    if path.suffix.lower() not in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
+        raise ValueError("image_path must be a .jpg, .png, .bmp or .webp file")
+    if not path.is_file():
+        raise ValueError(f"no such image: {path}")
+    out_dir = Path(tempfile.gettempdir()) / "penarm-overlays"
+    out_dir.mkdir(exist_ok=True)
+    overlay = str(out_dir / f"{path.stem}-overlay.png")
+    return analyze(path, overlay), overlay
+
+
 # ---- calibration (PENARM_MODE=calibrate): the LLM delimits the paper in photos, the server fits the arm to it ----
 
 if os.environ.get("PENARM_MODE") == "calibrate":
@@ -303,6 +322,41 @@ if os.environ.get("PENARM_MODE") == "calibrate":
         _store.add_point(Observation(s1, s2, x, y))
         return {"tip_paper_mm": _round((x, y)), "servo_deg": (s1, s2), "estimated_by_current_model_mm": _round(_arm.tip_fk()),
                 "points": len(_store.points), "warnings": warn, "note": note}
+
+    @mcp.tool()
+    @llm_readable_errors
+    def analyze_photo(image_path: str) -> dict[str, object]:
+        """Find, in a hand-held phone photo of the arm on the lined sheet, the sheet's ruled block (its four corners, named
+        from the arm's point of view), the pen holder's hole and the shoulder, with no markers and no fixed camera.
+        Returns pixel positions, a confidence, warnings and the path of an overlay PNG that shows what was detected
+        (look at it before trusting the numbers). It refuses torn, heavily inked or very oblique sheets and says why;
+        then read the corners yourself and use record_photo_observation."""
+        res, overlay = _analyze_file(image_path)
+        return {"corners_px": {k: _round(v) for k, v in res.corners_px.items()},
+                "ring_px": _round(res.ring_px) if res.ring_px else None, "base_px": _round(res.base_px) if res.base_px else None,
+                "confidence": res.confidence, "ruled_lines": res.lines_found, "warnings": res.warnings, "overlay_png": overlay}
+
+    @mcp.tool()
+    @llm_readable_errors
+    def record_photo_observation_auto(image_path: str) -> dict[str, object]:
+        """analyze_photo + record: locate the sheet and the pen holder in the photo, correct the perspective of the
+        holder (it sits above the paper) to get the tip's position on the paper, and store it with the servo angles the
+        board reports now. The 'paper size' must be the size of the RULED BLOCK in mm (set_paper), measured with a ruler.
+        Refuses low-confidence photos."""
+        res, overlay = _analyze_file(image_path)
+        if res.ring_px is None or res.ring_diameter_px is None:
+            raise ValueError("the pen holder's hole was not found in the photo: " + "; ".join(res.warnings))
+        if res.confidence < 0.7:
+            raise ValueError(f"low confidence ({res.confidence}): " + "; ".join(res.warnings))
+        from .photocv import tip_from_ring
+
+        (x, y), k, warn = tip_from_ring(res.ring_px, res.ring_diameter_px, res.image_wh, res.corners_px,
+                                        _arm.cfg.page_w, _arm.cfg.page_h)
+        _, _, s1, s2 = _link.read()
+        _store.add_point(Observation(s1, s2, x, y))
+        return {"tip_paper_mm": _round((x, y)), "perspective_k": round(k, 2), "servo_deg": (s1, s2),
+                "estimated_by_current_model_mm": _round(_arm.tip_fk()), "points": len(_store.points),
+                "confidence": res.confidence, "warnings": [*res.warnings, *warn], "overlay_png": overlay}
 
     @mcp.tool()
     def calibration_poses() -> list[list[float]]:
