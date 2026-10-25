@@ -3,7 +3,11 @@ name = "penarm"
 version = "0.1.0"
 description = "MCP server driving a 2-link pen-plotter arm through an ESP32"
 requires-python = ">=3.11"
-dependencies = ["mcp>=1.2", "pyserial>=3.5"]
+dependencies = [
+    "mcp>=1.2",
+    "pyserial>=3.5",
+    "svgelements>=1.9.6",
+]
 
 [dependency-groups]
 dev = ["pytest>=8", "mypy>=1.10", "types-pyserial"]
@@ -27,3 +31,10 @@ packages = ["src/penarm"]
 
 [tool.mypy]
 strict = true
+
+[[tool.mypy.overrides]]
+module = ["svgelements"]
+ignore_missing_imports = true  # third-party library without type stubs
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

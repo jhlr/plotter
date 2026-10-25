@@ -21,13 +21,24 @@ Serial runs at 57600 baud (`PENARM_BAUD` in `config.h`, matched by `SerialLink`)
 MCP client entry: command `uv`, args `["--directory", ".../server", "run", "penarm-mcp"]`.
 
 ## Canvas and tools
-The server computes a **canvas**: the largest rectangle the arm can fully reach (grid scan of the IK), in its own mm frame (origin bottom-left). Drawing tools take canvas coordinates only, so the LLM never sees page/servo geometry: `canvas_info`, `draw_line`, `draw_polyline`, `draw_rectangle`, `draw_circle`, `draw_arc`, `draw_bezier`, `move_to`, `get_state`, `locate_pencil`. Whole paths are validated before anything moves.
+The server computes a **canvas**: the largest rectangle the arm can fully reach (grid scan of the IK), in its own mm frame (origin bottom-left); `set_canvas` switches to a tall `portrait` / `portrait_left` / `portrait_right` area. Drawing tools take canvas coordinates only, so the LLM never sees page or servo geometry. All of them build **strokes** and go through one entry that validates the whole drawing before anything moves:
+- `draw_path` (typed ops: move/line/arc/bezier/quad/close, plus `transform` and `fit` to place it), `draw_svg_path` (SVG `d` strings, scaled into a box, y flipped), `draw_shape` (circle, ellipse, rectangle, square, polygon, triangle, star, spiral, heart, hatch, wave), `draw_polyline`, `draw_line`, `draw_bezier`, `move_to`.
+- `dry_run=true` on any of them returns bbox, length, estimated time, an ASCII thumbnail and an SVG, and moves nothing.
+- Drawings run as **jobs**: a call waits `PENARM_SYNC_WAIT` s (default 20), then returns a `job_id` to poll with `job_status`; `stop()` cancels within a millimetre. One job at a time.
+- Also `canvas_info`, `get_state`, `locate_pencil` (camera).
 
-## Calibration (`PENARM_MODE=calibrate`)
-Offsets/signs/base are fitted from measurements instead of edited in code (`calibration.json`, git-ignored, applied on startup):
-1. `calibration_poses` -> for each pose: `goto_servos(s1, s2)`, let the pen mark the sheet, measure the tip on the sheet with a ruler (page mm, origin = sheet's bottom-left corner), `record_calibration_point(x, y)`.
-2. `fit_calibration` (>= 4 points; `fit_lengths=true` with >= 7) tries all 4 sign combinations, reports rmse in mm, saves and applies it; the canvas is recomputed.
-Pure-Python Levenberg-Marquardt, tested on synthetic data (recovers offsets/base < 0.5 mm, picks flipped signs, tolerates 1 mm ruler noise).
+## Robustness
+- One server per serial port (lock file); retries with a resend (every command is idempotent); automatic reconnect when the board goes silent.
+- The firmware reports a `boot=<id>` that changes on every restart: the server notices a reset (brown-out, cable bump), re-syncs the arm's real pose and re-validates the stroke instead of drawing from a stale position.
+- `W <s>` makes the board release the servos after that long without commands (`idle_release_s`, default 120 s), so a dead host never leaves the pen pressing the paper.
+- Tests run against a fake board that loses 40% of the replies like the CH340 clone (`tests/fakes.py`); the retry test goes red with `retries=1`.
+
+## Calibration (`PENARM_MODE=calibrate`): the LLM delimits the paper
+Offsets, signs and base are fitted from observations instead of being edited in code (`calibration.json`, git-ignored, applied on startup). The LLM does the measuring from ordinary photos:
+1. `set_paper(width, height)` (default 200 x 275 mm).
+2. For each pose (`calibration_poses`, `goto_servos`): take a photo, read the **four paper corners** and the **pen tip's contact point on the paper** in pixels, and call `record_photo_observation(corners, point_px)`. Corners are named from the arm's point of view (`near_left`, `near_right`, `far_right`, `far_left`, near = closest to the base); a homography maps pixels to paper mm, so a hand-held camera is fine. Use an ink dot or the pen touching the paper, not the holder (it sits above the paper and shifts with perspective).
+3. `fit_calibration(scope)`: `base` (the paper moved: one photo re-registers it; offsets and lengths stay), `pose` (offsets, signs, base; >= 4 points), `full` (also link lengths; >= 7). It tries all sign combinations, reports the rmse in mm, saves and applies it, and the canvas is recomputed.
+Ruler measurements still work (`record_calibration_point`). The fitter is pure-Python Levenberg-Marquardt, tested on synthetic perspective photos (recovers offsets < 0.2 deg, base < 0.5 mm, one-photo base re-registration exact).
 
 ## Vision (optional)
 Overhead camera, OpenCV runs in the server: the LLM gets `locate_pencil` numbers (x/y mm, frames seen, spread, error vs kinematic estimate), never frames.

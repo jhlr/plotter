@@ -12,9 +12,14 @@ from .kinematics import fk, servos_to_joints
 
 POSE_FIELDS = ("offset1", "offset2", "base_x", "base_y")
 LENGTH_FIELDS = ("l1", "l2")
-SAVED_FIELDS = (*POSE_FIELDS, *LENGTH_FIELDS, "sign1", "sign2")
-MIN_POINTS = 4  # 4 free params, 2 equations per point
-MIN_POINTS_LENGTHS = 7
+PAPER_FIELDS = ("page_w", "page_h")
+SAVED_FIELDS = (*POSE_FIELDS, *LENGTH_FIELDS, *PAPER_FIELDS, "sign1", "sign2")
+# fit scope -> (free parameters, minimum points; every point gives 2 equations)
+SCOPES: dict[str, tuple[tuple[str, ...], int]] = {
+    "base": (("base_x", "base_y"), 1),  # the paper moved: re-register it, keep offsets and lengths
+    "pose": (POSE_FIELDS, 4),
+    "full": (POSE_FIELDS + LENGTH_FIELDS, 7),
+}
 
 
 @dataclass(frozen=True)
@@ -99,13 +104,17 @@ def _lm(cfg: ArmConfig, obs: list[Observation], names: tuple[str, ...], iters: i
     return FitResult(with_x(x), math.sqrt(cost / len(obs)), len(obs))
 
 
-def fit(cfg: ArmConfig, obs: list[Observation], fit_lengths: bool = False) -> FitResult:
-    """Best of the 4 sign combinations (signs are uncertain on a fresh build); joint angles at servo=90 are kept
-    when a sign flips so every start is near the same physical pose."""
-    need = MIN_POINTS_LENGTHS if fit_lengths else MIN_POINTS
+def fit(cfg: ArmConfig, obs: list[Observation], scope: str = "pose") -> FitResult:
+    """Fit the parameters of `scope`. For 'pose' and 'full' the best of the 4 sign combinations wins (signs are
+    uncertain on a fresh build); joint angles at servo=90 are kept when a sign flips so every start is near the same
+    physical pose."""
+    if scope not in SCOPES:
+        raise ValueError(f"scope must be one of {sorted(SCOPES)}")
+    names, need = SCOPES[scope]
     if len(obs) < need:
-        raise ValueError(f"need at least {need} calibration points, have {len(obs)}")
-    names = POSE_FIELDS + (LENGTH_FIELDS if fit_lengths else ())
+        raise ValueError(f"scope '{scope}' needs at least {need} calibration points, have {len(obs)}")
+    if scope == "base":
+        return _lm(cfg, obs, names)
     best: FitResult | None = None
     for s1, s2 in itertools.product((1.0, -1.0), repeat=2):
         start = replace(
@@ -118,6 +127,53 @@ def fit(cfg: ArmConfig, obs: list[Observation], fit_lengths: bool = False) -> Fi
             best = res
     assert best is not None
     return best
+
+
+# ---- paper registration from a photo: the LLM reads the paper corners (and the pen tip) in pixels ----
+
+CORNER_ORDER = ("near_left", "near_right", "far_right", "far_left")  # near = side closest to the arm base
+
+
+def homography(src: list[tuple[float, float]], dst: list[tuple[float, float]]) -> list[list[float]]:
+    """3x3 projective map taking the 4 src points to the 4 dst points (h33 = 1)."""
+    if len(src) != 4 or len(dst) != 4:
+        raise ValueError("a homography needs exactly 4 point pairs")
+    a: list[list[float]] = []
+    b: list[float] = []
+    for (x, y), (u, v) in zip(src, dst):
+        a += [[x, y, 1, 0, 0, 0, -u * x, -u * y], [0, 0, 0, x, y, 1, -v * x, -v * y]]
+        b += [u, v]
+    h = _solve(a, b)
+    return [h[0:3], h[3:6], [h[6], h[7], 1.0]]
+
+
+def apply_homography(h: list[list[float]], p: tuple[float, float]) -> tuple[float, float]:
+    w = h[2][0] * p[0] + h[2][1] * p[1] + h[2][2]
+    return (h[0][0] * p[0] + h[0][1] * p[1] + h[0][2]) / w, (h[1][0] * p[0] + h[1][1] * p[1] + h[1][2]) / w
+
+
+def paper_point_from_photo(
+    corners_px: dict[str, tuple[float, float]], point_px: tuple[float, float], paper_w: float, paper_h: float
+) -> tuple[float, float]:
+    """Pixel -> paper mm (origin = near-left corner, x along the near edge, y toward the far edge)."""
+    missing = [k for k in CORNER_ORDER if k not in corners_px]
+    if missing:
+        raise ValueError(f"missing paper corners: {missing}")
+    src = [corners_px[k] for k in CORNER_ORDER]
+    dst = [(0.0, 0.0), (paper_w, 0.0), (paper_w, paper_h), (0.0, paper_h)]
+    return apply_homography(homography(src, dst), point_px)
+
+
+def corner_sanity(corners_px: dict[str, tuple[float, float]]) -> list[str]:
+    """Warnings for corner sets that cannot be a photographed rectangle (wrong order, collinear, mirrored)."""
+    pts = [corners_px[k] for k in CORNER_ORDER]
+    cross = []
+    for i in range(4):
+        a, b, c = pts[i], pts[(i + 1) % 4], pts[(i + 2) % 4]
+        cross.append((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]))
+    if not (all(v > 0 for v in cross) or all(v < 0 for v in cross)):
+        return ["corners do not form a convex quadrilateral in the order near_left, near_right, far_right, far_left"]
+    return []
 
 
 class CalibrationStore:
@@ -145,8 +201,9 @@ class CalibrationStore:
         self.points = []
         self.save()
 
-    def fit(self, base_cfg: ArmConfig, fit_lengths: bool = False) -> FitResult:
-        res = fit(self.apply(base_cfg), self.points, fit_lengths)
+    def fit(self, base_cfg: ArmConfig, scope: str = "pose", last: int | None = None) -> FitResult:
+        pts = self.points[-last:] if last else self.points
+        res = fit(self.apply(base_cfg), pts, scope)
         self.params = {f: float(getattr(res.cfg, f)) for f in SAVED_FIELDS}
         self.rmse_mm = res.rmse_mm
         self.save()

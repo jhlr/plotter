@@ -40,3 +40,21 @@ inline void boardInit() {
   analogReadResolution(12);
 #endif
 }
+
+// A value that differs on every boot, reported by '?' so the host can tell the board restarted (brown-out, cable bump).
+// ESP32: random. Uno: a counter in EEPROM (one write per boot).
+#if defined(ARDUINO_ARCH_AVR)
+#include <EEPROM.h>
+#endif
+inline uint16_t bootId() {
+#if defined(ARDUINO_ARCH_ESP32)
+  return (uint16_t)esp_random();
+#else
+  constexpr int BOOT_ADDR = 16;
+  uint16_t n;
+  EEPROM.get(BOOT_ADDR, n);
+  n++;
+  EEPROM.put(BOOT_ADDR, n);
+  return n;
+#endif
+}

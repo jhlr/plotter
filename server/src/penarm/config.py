@@ -33,6 +33,7 @@ class ArmConfig:
     elbow_up: bool = True  # which of the two IK solutions to use
     seg_mm: float = 1.0  # Cartesian interpolation step for straight lines
     speed_dps: float = 40.0  # servo speed while drawing (deg/s)
+    idle_release_s: float = 120.0  # board releases the servos after this long without commands; 0 = never
 
 
 DEFAULT = ArmConfig()

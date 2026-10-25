@@ -1,9 +1,12 @@
 """Owner of the draw cycle: canvas path -> Cartesian interpolation -> IK -> link. Everything else is a primitive."""
+from collections.abc import Callable
+
 from .canvas import Canvas, portrait_canvas, safe_canvas
 from .config import ArmConfig
-from .errors import Unreachable
+from .errors import Cancelled, Unreachable
 from .kinematics import fk, interpolate, joints_to_servos, page_to_servos, servos_to_joints
 from .link import Link
+from .shapes import Stroke
 
 
 class Arm:
@@ -13,10 +16,18 @@ class Arm:
         self.link = link
         self.pos: tuple[float, float] | None = None  # last commanded position, PAGE mm
         self.set_config(cfg)
-        link.set_speed(cfg.speed_dps)
+        self._generation = getattr(link, "resets", 0)
+        self._resync()
+
+    def _resync(self) -> None:
+        """(Re)send the speed and take the tip from the board's real pose, so the next stroke starts from where the
+        arm is: after boot, and after the board resets under us (brown-out, cable bump)."""
+        self.link.set_speed(self.cfg.speed_dps)
+        self.link.set_idle_release(self.cfg.idle_release_s)
+        self.pos = None
         try:  # first stroke starts from the boot pose in a straight line, not a joint-space swing off the page
             home = self.tip_fk()
-            page_to_servos(cfg, *home)
+            page_to_servos(self.cfg, *home)
             self.pos = home
         except Unreachable:
             pass
@@ -45,28 +56,52 @@ class Arm:
             )
         return self.canvas.to_page(x, y)
 
-    def _line_servos(self, target: tuple[float, float]) -> list[tuple[float, float]]:
-        pts = interpolate(self.pos, target, self.cfg.seg_mm) if self.pos else [target]
-        return [page_to_servos(self.cfg, px, py) for px, py in pts]
+    def plan(self, strokes: list[Stroke]) -> list[Stroke]:
+        """Canvas strokes -> page strokes, every point and every interpolated step validated (travel from the current
+        position included). Raises before anything moves."""
+        if not strokes or any(not s for s in strokes):
+            raise ValueError("empty path")
+        pages = [[self._page_point(*p) for p in s] for s in strokes]
+        prev = self.pos
+        for s in pages:
+            for p in s:
+                for q in interpolate(prev or p, p, self.cfg.seg_mm):
+                    page_to_servos(self.cfg, *q)
+                prev = p
+        return pages
 
-    def move_to(self, x: float, y: float) -> None:
-        """Straight line from the current position to canvas (x, y); validated fully before moving."""
-        target = self._page_point(x, y)
-        servos = self._line_servos(target)  # raises before any motion
-        for s1, s2 in servos:
-            self.link.move(s1, s2)
+    def _move_page(self, target: tuple[float, float], should_cancel: Callable[[], bool] | None) -> None:
+        pts = interpolate(self.pos, target, self.cfg.seg_mm) if self.pos else [target]
+        for px, py in pts:
+            if should_cancel and should_cancel():
+                raise Cancelled()
+            self.link.move(*page_to_servos(self.cfg, px, py))
+            self.pos = (px, py)
         self.pos = target
 
+    def draw_strokes(
+        self, strokes: list[Stroke], should_cancel: Callable[[], bool] | None = None,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> None:
+        """Draw canvas strokes in order. With no pen-up the tip travels between strokes touching the paper."""
+        pages = self.plan(strokes)
+        if getattr(self.link, "resets", 0) != self._generation:
+            self._generation = getattr(self.link, "resets", 0)
+            self._resync()
+            pages = self.plan(strokes)  # the start pose changed: re-validate the travel
+        total, done = sum(len(s) for s in pages), 0
+        for s in pages:
+            for p in s:
+                self._move_page(p, should_cancel)
+                done += 1
+                if progress:
+                    progress(done, total)
+
+    def move_to(self, x: float, y: float) -> None:
+        self.draw_strokes([[(x, y)]])
+
     def draw_polyline(self, points: list[tuple[float, float]]) -> None:
-        if not points:
-            raise ValueError("empty path")
-        pages = [self._page_point(*p) for p in points]  # whole path validated up front: no half-drawn strokes
-        start = self.pos
-        for a, b in zip([start or pages[0], *pages], pages):
-            for px, py in interpolate(a, b, self.cfg.seg_mm):
-                page_to_servos(self.cfg, px, py)
-        for x, y in points:
-            self.move_to(x, y)
+        self.draw_strokes([points])
 
     def goto_servos(self, s1: float, s2: float) -> None:
         """Raw servo move (calibration). Limits enforced; not interpolated, so keep the pen clear of anything."""

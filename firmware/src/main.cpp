@@ -1,5 +1,6 @@
 // Pen-plotter arm firmware (ESP32 or Arduino Uno, see config.h): 2 servos + 2 feedback pots, line protocol over USB serial.
-//   ?            -> "OK penarm 1 adcmax=<4095|1023>"
+//   ?            -> "OK penarm 1 adcmax=<4095|1023> boot=<id>"  (the id changes on every restart)
+//   W <seconds>  -> release (detach) the servos after that long without commands; 0 = never   -> "OK"
 //   V <deg/s>    -> set max servo speed            -> "OK"
 //   A <s1> <s2>  -> go to servo angles (deg, 0-180), ramped; "OK" once reached
 //   R            -> "R <adc1> <adc2> <s1> <s2>"    (raw ADC, 0..adcmax; current servo angles)
@@ -20,6 +21,10 @@ float maxSpeed = 60.0f;  // deg/s
 bool ackPending = false;
 bool moving = false;
 uint32_t lastStep = 0;
+uint16_t bootNumber = 0;
+uint32_t idleLimitMs = 0;  // 0 = never release
+uint32_t lastCommandMs = 0;
+bool attached = false;
 String line;
 
 #if PERSIST_POSE
@@ -51,6 +56,21 @@ void savePoseWhenIdle() {
 
 int toMicros(float deg) {
   return PULSE_MIN_US + (int)lroundf((PULSE_MAX_US - PULSE_MIN_US) * deg / 180.0f);
+}
+
+void attachServos() {
+  servo1.attach(PIN_SERVO1, PULSE_MIN_US, PULSE_MAX_US);
+  servo2.attach(PIN_SERVO2, PULSE_MIN_US, PULSE_MAX_US);
+  attached = true;
+}
+
+void releaseWhenIdle() {
+  // A silent host (crashed, unplugged, forgotten) should not leave the servos buzzing and the pen pressing the paper.
+  if (attached && idleLimitMs && !ackPending && millis() - lastCommandMs > idleLimitMs) {
+    servo1.detach();
+    servo2.detach();
+    attached = false;
+  }
 }
 
 void writeServos() {
@@ -87,9 +107,17 @@ void stepMotion() {
 }
 
 void handle(const String& cmd) {
+  lastCommandMs = millis();
   if (cmd == "?") {
     Serial.print("OK penarm 1 adcmax=");
-    Serial.println(ADC_MAX);
+    Serial.print(ADC_MAX);
+    Serial.print(" boot=");
+    Serial.println(bootNumber);
+  } else if (cmd.startsWith("W ")) {
+    long sec = cmd.substring(2).toInt();
+    if (sec < 0 || sec > 86400) { Serial.println("ERR idle"); return; }
+    idleLimitMs = (uint32_t)sec * 1000UL;
+    Serial.println("OK");
   } else if (cmd.startsWith("V ")) {
     float v = cmd.substring(2).toFloat();
     if (v < 1.0f || v > 300.0f) { Serial.println("ERR speed"); return; }
@@ -103,6 +131,10 @@ void handle(const String& cmd) {
     if (sp < 0 || a < 0 || a > 180 || b < 0 || b > 180) {
       Serial.println("ERR angles");
       return;
+    }
+    if (!attached) {  // woke up from an idle release: resume exactly where the arm was
+      writeServos();
+      attachServos();
     }
     tgt[0] = a;
     tgt[1] = b;
@@ -127,11 +159,11 @@ void setup() {
 #if PERSIST_POSE
   loadPose();
 #endif
-  writeServos();  // also before attach: the first pulses carry the boot pose, not the library's 1500 us default
-  servo1.attach(PIN_SERVO1, PULSE_MIN_US, PULSE_MAX_US);
-  servo2.attach(PIN_SERVO2, PULSE_MIN_US, PULSE_MAX_US);
+  bootNumber = bootId();
+  attachServos();
   writeServos();
   lastStep = millis();
+  lastCommandMs = lastStep;
 }
 
 void loop() {
@@ -146,6 +178,7 @@ void loop() {
     }
   }
   stepMotion();
+  releaseWhenIdle();
 #if PERSIST_POSE
   savePoseWhenIdle();
 #endif

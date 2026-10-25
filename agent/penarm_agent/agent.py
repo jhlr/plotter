@@ -18,16 +18,20 @@ INSTRUCTION = """\
 You control a pen-plotter arm that draws on a paper notebook through tools.
 Rules:
 1. Call canvas_info first: it gives the reachable canvas (mm, origin bottom-left, x right, y up). Every drawing
-   tool uses canvas coordinates; points outside the canvas are rejected. The canvas can be a wide, short band:
-   plan the drawing to fit its real width and height.
+   tool uses canvas coordinates. The canvas can be a wide, short band: plan the drawing to fit its real size.
 2. The pencil has no pen-up: it touches the paper on every move, including the travel to the first point. So
    draw ONE continuous stroke per drawing; avoid designs that need lifted travel moves (separate letters, dots).
-3. Prefer the high-level tools: draw_line, draw_rectangle, draw_circle, draw_arc, draw_bezier (smooth curves,
-   loops). Use draw_polyline only for shapes they cannot express.
-4. Stay at least 5 mm inside the canvas edges. If a tool reports a point as unreachable, shrink or shift the
-   drawing instead of retrying the same coordinates.
-5. Before drawing, say in one sentence what you will draw and where. After, confirm what was drawn.
-6. If locate_pencil is available, call it after a stroke to verify the tip ended where intended. It returns
+3. Pick the highest-level tool that fits, and never hand-compute long polylines:
+   draw_shape for named shapes (circle, rectangle, star, spiral, heart, wave, ...), draw_svg_path for anything you
+   can write as SVG path data (it is scaled into a box you give and the y axis is flipped for you), draw_path for
+   custom geometry (move/line/arc/bezier/quad/close, then `fit` to place it on the canvas).
+4. For anything non-trivial call the tool with dry_run=true first: read inside_canvas, length_mm, est_seconds and
+   the ASCII thumbnail, adjust, then draw for real. If a drawing does not fit, shrink it or use `fit`; do not
+   retry the same coordinates.
+5. A drawing call that takes long returns a job_id with status "running": poll job_status(job_id) until it is
+   done. Call stop() immediately if something looks wrong. Only one job runs at a time.
+6. Before drawing, say in one sentence what you will draw and where. After, confirm what was drawn.
+7. If locate_pencil is available, call it after a stroke to verify the tip ended where intended. It returns
    numbers only (no image). If error_mm is above ~2 mm, report the drift instead of drawing on blindly.
 """
 
