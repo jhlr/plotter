@@ -39,8 +39,22 @@ Opening the serial port **resets the Uno** (DTR), so the first command takes ~2 
 - `set_output("board")`, draw as usual (it is stored in the Uno's EEPROM, nothing moves), then `run_on_board(loops)` (0 = forever). The board plays it alone: close the host and it keeps going. It stops when the port is opened again or on power loss. About 490 steps fit. Run it slower (30-40 mm/s) if the servos lose steps.
 - `resume_drawing()` continues a cancelled or interrupted drawing from where the arm stands (the journal is `~/.penarm/journal.json`; it refuses if the arm was moved off the drawing's path).
 
-### Correction mesh (the rectangle calibration)
-The kinematic fit leaves a position error of a few mm that **repeats** from drawing to drawing, so it can be corrected: draw a rectangle, photograph the whole clipboard from above (four corners visible), measure the ink against the plan, and store the edge errors under `mesh` in `calibration.json` (`penarm/mesh.py`; the `Arm` aims against it and the canvas is computed from where it aims). Read the ink in Lab colour (the `a` channel drops below ~115 on green ink), not HSV saturation (thin strokes lose it). Iterate: new mesh = old mesh + the error left over. The photo-reading scripts are not packaged in the repo yet, see `docs/2026-10-28-movement-and-ink-calibration.md`.
+### Rectangle calibration (how we ran it)
+The kinematic fit leaves a position error of a few mm that **repeats** from drawing to drawing, so it can be corrected with a mesh (`penarm/mesh.py`) measured from a drawn rectangle. One iteration, on a **fresh sheet** (the pen has no lift, old ink confuses the reading):
+
+    cd server && uv sync --all-extras
+    uv run penarm-inkcal draw --port /dev/cu.usbserial-XXXX            # draws the canvas rectangle at 30 mm/s with the current mesh, parks the arm at the bottom middle
+
+1. Photograph the **whole clipboard** from above, four corners in view, arm out of the way and nobody touching it. Any orientation works.
+2. Open the **full-resolution** photo in an image viewer and note the pixel `x,y` of the four corners of the **clipboard board** (not the paper), labelled by what they are in the board frame: bottom = the edge nearest the servos, left/right as seen from the arm base looking away from it.
+3. Measure (add `--mask x0,y0,x1,y1` in pixels for anything green that is not the drawing, e.g. the pen barrel; repeatable):
+
+        uv run penarm-inkcal measure photo.jpg --corners "BLx,BLy BRx,BRy TRx,TRy TLx,TLy" --overlay check.png
+
+   It prints the rectangle that was planned, the rms and max edge error in mm and how many positions on each edge were actually read. **Open `check.png`** (ink green, plan red): if the ink is missing pieces or picks up the pen, fix it with `--mask` before trusting any number.
+4. If it looks right, run the same command with `--update-mesh` (folds the leftover error into `calibration.json`, gain 0.8), then `draw` again on a new sheet and repeat until the error stops shrinking (2-3 rounds).
+
+The ink is read in Lab colour (the `a` channel drops below ~115 on green ink), not HSV saturation, which loses thin strokes. The correction only holds inside the measured rectangle, and the mesh belongs to the calibration it was measured with: after changing offsets/gains/lengths, delete the `mesh` key and start again. Do not measure the rectangle at the very edge of the reach (the arm saturates there and the mesh would extrapolate a limit, not an error). What did and did not work is in `docs/2026-10-28-movement-and-ink-calibration.md`.
 
 ## Layout
 - `firmware` (PlatformIO, esp32dev): line protocol `?`, `V`, `A s1 s2` (OK on arrival), `R`. Servos GPIO18/19, pots GPIO34/35. Builds clean.

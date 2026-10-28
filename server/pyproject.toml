@@ -15,6 +15,7 @@ dev = ["pytest>=8", "mypy>=1.10", "types-pyserial"]
 [project.scripts]
 penarm-mcp = "penarm.server:main"
 penarm-markers = "penarm.vision:markers_main"
+penarm-inkcal = "penarm.inkcal:main"
 
 [project.optional-dependencies]
 vision = [

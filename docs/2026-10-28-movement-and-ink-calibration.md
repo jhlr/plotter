@@ -19,4 +19,4 @@ Draw a rectangle, photograph the whole clipboard, rectify with the board corners
 - The edge error repeats between drawings (bottom edge, two days: correlation 0.94, 1.3 mm rms difference), so a mesh correction is worth keeping and can be iterated: new mesh = old mesh + leftover error.
 - Did not generalise (leave-one-drawing-out): per-servo angle curves, direction-dependent lag, link lengths/base, a smooth residual field from separate drawings, ink dots at fixed poses (ambiguous to match).
 - The first mesh extended a reach-limit saturation (x=215) inward; measure on the rectangle that will be used.
-- Photo tooling still lives in scratch scripts; it should move into the repo as a calibration tool.
+- Packaged as `penarm-inkcal` (`draw` / `measure`, `penarm/inkcal.py`); see the README for the procedure.
