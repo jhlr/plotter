@@ -27,8 +27,9 @@ from .shapes import rect_points
 Pts = NDArray[np.float64]
 Rect = tuple[float, float, float, float]  # x0, y0, x1, y1 in page mm
 EDGE_STEP_MM = 6.0
-LAB_A_MAX = 115  # paper is ~127 on Lab's a channel; green ink drops below ~112 (HSV saturation loses thin strokes)
 LAB_L_MAX = 205
+INKS = ("green", "blue", "red", "dark")  # `dark` = black or very dark blue ballpoint: judged against the photo's own paper brightness
+DARK_DROP = 70  # a `dark` ink pixel is this much darker (Lab L) than the median pixel of the photo
 
 
 def thin(mask: NDArray[np.uint8]) -> NDArray[np.uint8]:
@@ -52,10 +53,23 @@ def thin(mask: NDArray[np.uint8]) -> NDArray[np.uint8]:
     return im
 
 
-def ink_pixels(photo: NDArray[np.uint8], masked_out: list[tuple[int, int, int, int]]) -> NDArray[np.int64]:
-    """(x, y) pixels of the one-pixel centreline of the green ink; `masked_out` boxes (x0, y0, x1, y1 px) hide the pen."""
-    lab = cv2.cvtColor(photo, cv2.COLOR_BGR2LAB)
-    mask = np.where((lab[..., 1] < LAB_A_MAX) & (lab[..., 0] < LAB_L_MAX), 255, 0).astype(np.uint8)
+def _is_ink(lab: NDArray[np.uint8], ink: str) -> NDArray[np.bool_]:
+    """Pixels whose colour is the ink's, from Lab (paper is ~127 on a and b; HSV saturation loses thin strokes)."""
+    light, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
+    if ink == "green":
+        return (a < 115) & (light < LAB_L_MAX)  # green ink drops a below ~112
+    if ink == "red":
+        return (a > 140) & (light < LAB_L_MAX)
+    if ink == "blue":
+        return (b < 112) & (light < LAB_L_MAX)
+    if ink == "dark":
+        return light < float(np.median(light)) - DARK_DROP
+    raise ValueError(f"unknown ink {ink!r}: choose one of {INKS}")
+
+
+def ink_pixels(photo: NDArray[np.uint8], masked_out: list[tuple[int, int, int, int]], ink: str = "green") -> NDArray[np.int64]:
+    """(x, y) pixels of the one-pixel centreline of the ink; `masked_out` boxes (x0, y0, x1, y1 px) hide the pen."""
+    mask = np.where(_is_ink(np.asarray(cv2.cvtColor(photo, cv2.COLOR_BGR2LAB), dtype=np.uint8), ink), 255, 0).astype(np.uint8)
     for x0, y0, x1, y1 in masked_out:
         mask[y0:y1, x0:x1] = 0
     blots = cv2.morphologyEx(mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (41, 41)))
@@ -139,16 +153,16 @@ def draw(port: str, feed: float, speed: float) -> None:
         link.close()
 
 
-def run(photo_path: str, corners: str, masks: list[str], update: bool, gain: float, overlay: str | None) -> None:
+def run(photo_path: str, corners: str, masks: list[str], update: bool, gain: float, overlay: str | None, ink_color: str = "green") -> None:
     store = CalibrationStore()
     cfg = store.apply(DEFAULT)
     photo = cv2.imread(photo_path)
     if photo is None:
         raise SystemExit(f"cannot read {photo_path}")
     boxes = [tuple(int(v) for v in m.split(",")) for m in masks]
-    px = ink_pixels(photo, boxes)  # type: ignore[arg-type]
+    px = ink_pixels(photo, boxes, ink_color)  # type: ignore[arg-type]
     if len(px) < 500:
-        raise SystemExit(f"only {len(px)} ink pixels found: is the ink green and the photo sharp? mask the pen with --mask")
+        raise SystemExit(f"only {len(px)} ink pixels found: is the ink really {ink_color} (see --ink) and the photo sharp? mask the pen with --mask")
     ink = to_board_mm(px, _parse_corners(corners), cfg.page_w, cfg.page_h)
     rect = _planned_rect(cfg, store.mesh)
     mesh, stats = measure(ink, rect, store.mesh, gain)
@@ -190,7 +204,8 @@ def main(argv: list[str] | None = None) -> None:
     m = sub.add_parser("measure", help="measure a photo of the drawn rectangle")
     m.add_argument("photo")
     m.add_argument("--corners", required=True, help='"x,y x,y x,y x,y": board bottom-left, bottom-right, top-right, top-left')
-    m.add_argument("--mask", action="append", default=[], help="x0,y0,x1,y1 (px) box to ignore, e.g. the green pen (repeatable)")
+    m.add_argument("--mask", action="append", default=[], help="x0,y0,x1,y1 (px) box to ignore, e.g. the pen barrel (repeatable)")
+    m.add_argument("--ink", choices=INKS, default="green", help="colour of the pen that drew the rectangle (ballpoint: blue, or dark for black)")
     m.add_argument("--update-mesh", action="store_true", help="fold the measured error into calibration.json")
     m.add_argument("--gain", type=float, default=0.8)
     m.add_argument("--overlay", help="write a PNG of the ink against the plan")
@@ -198,7 +213,7 @@ def main(argv: list[str] | None = None) -> None:
     if a.cmd == "draw":
         draw(a.port, a.feed, a.speed)
     else:
-        run(a.photo, a.corners, a.mask, a.update_mesh, a.gain, a.overlay)
+        run(a.photo, a.corners, a.mask, a.update_mesh, a.gain, a.overlay, a.ink)
 
 
 if __name__ == "__main__":
