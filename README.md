@@ -2,6 +2,46 @@
 
 Code: ``. 2-link planar arm, 2 SG90 servos + 2 feedback pots, pencil in a clamp (no pen-up yet).
 
+## Quick start (new machine, Arduino Uno)
+**Hardware:** Uno, 2 SG90 servos (proximal on **D9**, distal on **D8**), external **5 V supply for the servos** (>= 2 A) with its GND tied to the Uno's GND, USB cable to the computer. Never power the servos from the Uno's 5 V pin.
+
+**Install:** [PlatformIO](https://platformio.org/install/cli) (`pio`) and [uv](https://docs.astral.sh/uv/) (Python >= 3.11). macOS/Linux/Windows.
+
+**1. Flash the firmware and test the servos (before anything else):**
+
+    cd firmware
+    pio run -e servotest_uno -t upload      # standalone test: both servos go to 90 deg
+    pio device monitor -b 57600             # type: 1 60  |  2 120  |  s (sweep)  |  c (centre)
+
+If a servo does not move here, it is wiring or power, not software. Then flash the real firmware:
+
+    pio run -e uno -t upload
+
+Watch for **"verified"** at the end of the upload. A flash whose verify step fails (`avr_read(): error reading ...`) can leave a firmware that answers `OK` but never drives the servos: flash again until it verifies.
+
+**2. Find the serial port:** macOS `ls /dev/cu.usbserial*`, Linux `ls /dev/ttyUSB*`, Windows Device Manager (`COM3`).
+
+**3. Run the server (simulator needs no hardware, drop `PENARM_PORT`):**
+
+    cd server
+    uv sync && uv run pytest                                  # all tests should pass
+    PENARM_PORT=/dev/cu.usbserial-XXXX uv run penarm-mcp      # Windows: PENARM_PORT=COM3
+
+Opening the serial port **resets the Uno** (DTR), so the first command takes ~2 s and any drawing stored on the board stops. Only one process may hold the port at a time.
+
+**4. Use it from an MCP client** (Claude Desktop/Code, etc.): command `uv`, args `["--directory", "/path/to/plotter/server", "run", "penarm-mcp"]`, env `PENARM_PORT=...`. Ask for `canvas_info` first; every tool draws in that canvas.
+
+**5. Before drawing, calibrate:** `server/calibration.json` is git-ignored and **specific to one arm**: without it the server uses the defaults in `config.py` (sheet 200 x 275 mm, servo range 0-180), and your geometry will differ. See *Calibration* below. Check that the arm really moves with the servo test before blaming the software, and put the pen over a sheet only after a dry run (`dry_run=true`).
+
+**Other things to know:** the pen has no lift (travel marks the paper), so give it a clean sheet; 30-45 mm/s is more accurate than 100 mm/s for long runs; do not touch the arm while it draws.
+
+### Drawing that survives a disconnect, and resuming
+- `set_output("board")`, draw as usual (it is stored in the Uno's EEPROM, nothing moves), then `run_on_board(loops)` (0 = forever). The board plays it alone: close the host and it keeps going. It stops when the port is opened again or on power loss. About 490 steps fit. Run it slower (30-40 mm/s) if the servos lose steps.
+- `resume_drawing()` continues a cancelled or interrupted drawing from where the arm stands (the journal is `~/.penarm/journal.json`; it refuses if the arm was moved off the drawing's path).
+
+### Correction mesh (the rectangle calibration)
+The kinematic fit leaves a position error of a few mm that **repeats** from drawing to drawing, so it can be corrected: draw a rectangle, photograph the whole clipboard from above (four corners visible), measure the ink against the plan, and store the edge errors under `mesh` in `calibration.json` (`penarm/mesh.py`; the `Arm` aims against it and the canvas is computed from where it aims). Read the ink in Lab colour (the `a` channel drops below ~115 on green ink), not HSV saturation (thin strokes lose it). Iterate: new mesh = old mesh + the error left over. The photo-reading scripts are not packaged in the repo yet, see `docs/2026-10-28-movement-and-ink-calibration.md`.
+
 ## Layout
 - `firmware` (PlatformIO, esp32dev): line protocol `?`, `V`, `A s1 s2` (OK on arrival), `R`. Servos GPIO18/19, pots GPIO34/35. Builds clean.
 - `server` (uv): `config.py` = geometry + calibration (single source), `kinematics.py` = IK/FK, `arm.py` = owner of the draw cycle, `server.py` = MCP tools (`page_info`, `move_to`, `draw_polyline`, `get_state`). `PENARM_PORT` unset = simulator.
@@ -25,7 +65,7 @@ The server computes a **canvas**: the largest rectangle the arm can fully reach 
 - `draw_path` (typed ops: move/line/arc/bezier/quad/close, plus `transform` and `fit` to place it), `draw_svg_path` (SVG `d` strings, scaled into a box, y flipped), `draw_shape` (circle, ellipse, rectangle, square, polygon, triangle, star, spiral, heart, hatch, wave), `draw_polyline`, `draw_line`, `draw_bezier`, `move_to`.
 - `dry_run=true` on any of them returns bbox, length, estimated time, an ASCII thumbnail and an SVG, and moves nothing.
 - Drawings run as **jobs**: a call waits `PENARM_SYNC_WAIT` s (default 20), then returns a `job_id` to poll with `job_status`; `stop()` cancels within a millimetre. One job at a time.
-- Also `canvas_info`, `get_state`, `locate_pencil` (camera).
+- Also `canvas_info`, `get_state`, `locate_pencil` (camera), `set_output` / `run_on_board` (drawing kept on the board), `resume_drawing`.
 
 ## Robustness
 - One server per serial port (lock file); retries with a resend (every command is idempotent); automatic reconnect when the board goes silent.
