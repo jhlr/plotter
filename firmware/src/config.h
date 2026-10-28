@@ -11,20 +11,24 @@ constexpr int PIN_POT1 = 34;  // ADC1, input only
 constexpr int PIN_POT2 = 35;
 constexpr int ADC_MAX = 4095;  // 12-bit
 #define PERSIST_POSE 0
+#define PROGRAM_STEPS 0  // no on-board stored drawing (needs the Uno's EEPROM)
 constexpr int QUEUE_SIZE = 512;  // waypoints buffered on the board
 #elif defined(ARDUINO_ARCH_AVR)  // Arduino Uno
 #include <Servo.h>
 // Servo lib takes over Timer1: PWM on 9/10 is unavailable (fine for servos).
-// Wired on the real arm: proximal servo (shoulder, servo 1) on D10, distal servo (elbow, servo 2) on D9.
-constexpr int PIN_SERVO1 = 10;
-constexpr int PIN_SERVO2 = 9;
+// Wired on the real arm: proximal servo (shoulder, servo 1) on D9, distal servo (elbow, servo 2) on D8.
+constexpr int PIN_SERVO1 = 9;
+constexpr int PIN_SERVO2 = 8;
 constexpr int PIN_POT1 = A0;
 constexpr int PIN_POT2 = A1;
 constexpr int ADC_MAX = 1023;  // 10-bit
 // Every port open auto-resets the Uno (the Windows CH340 driver pulses DTR even when told not to). Keep the last
-// pose in EEPROM and boot there, instead of snapping to HOME and dragging the pen across the page.
+// pose in EEPROM as the starting estimate; the servos stay released at boot so the arm is never moved by a reset.
 #define PERSIST_POSE 1
 constexpr int QUEUE_SIZE = 64;  // waypoints buffered on the board (4 bytes each; the Uno has 2 KB of RAM)
+// A drawing stored in EEPROM (1 KB): 8-byte header at address 32, then 2 bytes per step (int8 deltas, 0.1 degree).
+// 0..15 = last pose, 16..17 = boot counter (see bootId).
+#define PROGRAM_STEPS 492
 #else
 #error "Unsupported board: add its pins to src/config.h"
 #endif

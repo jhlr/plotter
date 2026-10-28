@@ -18,6 +18,7 @@ from .calibration import CalibrationStore, Observation, corner_sanity, paper_poi
 from .config import DEFAULT
 from .errors import Busy, Unreachable, VisionError
 from .jobs import JobRunner
+from .journal import Journal
 from .link import Link, SerialLink, SimLink
 from .paths import OPS_HELP, apply_transform_fit, point, strokes_from_ops, svg_to_strokes
 from .preview import describe
@@ -55,14 +56,20 @@ A two-servo pen-plotter arm. Provider-neutral usage guide:
 4. For anything non-trivial call the tool with dry_run=true first (bbox, length, time, ASCII thumbnail, SVG), then draw.
 5. A drawing returns a job_id if it takes long: poll job_status; call stop() to cancel. One job at a time.
 6. Points are plain [x, y] arrays; optional arguments use defaults (0, empty list, empty string), never null.
+7. A cancelled or interrupted drawing can be continued with resume_drawing() (from where the arm stands).
+8. To leave a drawing on the board (it keeps running after the computer disconnects): set_output("board"), call the
+   drawing tool as usual (it is stored, nothing moves), then run_on_board(loops). Back to normal: set_output("live").
 """
 
 mcp = MCPServer("penarm", instructions=GUIDE)
 _port = os.environ.get("PENARM_PORT")
 _link: Link = SerialLink(_port) if _port else SimLink()
 _store = CalibrationStore()
-_arm = Arm(_store.apply(DEFAULT), _link)
+# the interrupted drawing is kept on disk (hardware only) so resume_drawing works after this process dies
+_journal = Journal(Path(os.environ.get("PENARM_JOURNAL", Path.home() / ".penarm" / "journal.json")) if _port else None)
+_arm = Arm(_store.apply(DEFAULT), _link, _journal, _store.mesh)
 _jobs = JobRunner()
+_output = "live"  # 'live': drawing tools move the arm now; 'board': they store the drawing in the board's EEPROM
 _sync_wait = float(os.environ.get("PENARM_SYNC_WAIT", "20"))
 _camera = os.environ.get("PENARM_CAMERA")  # device index or stream URL; unset = no vision
 _locator = None
@@ -90,10 +97,22 @@ def _submit(strokes: list[Stroke], label: str, dry_run: bool) -> dict[str, objec
     info = describe(strokes, _arm.canvas, travel_from)
     if dry_run:
         return {"dry_run": True, **info}
-    job = _jobs.submit(label, lambda cancel, progress: _arm.draw_strokes(strokes, cancel, progress))
+    if _output == "board":
+        if _busy():
+            raise Busy("a drawing job is running: wait for it or call stop() first")
+        stored = _arm.store_strokes(strokes)
+        return {"stored_on_board": True, **stored, **{k: info[k] for k in ("bbox_mm", "length_mm", "est_seconds")},
+                "next": "call run_on_board(loops) to start it; the board then plays it on its own"}
+    return _run_job(label, lambda cancel, progress: _arm.draw_strokes(strokes, cancel, progress), info)
+
+
+def _run_job(
+    label: str, work: Callable[[Callable[[], bool], Callable[[int, int], None]], None], info: dict[str, object]
+) -> dict[str, object]:
+    job = _jobs.submit(label, work)
     _jobs.wait(job, _sync_wait)
     summary: dict[str, object] = dict(job.summary())
-    summary.update({k: info[k] for k in ("bbox_mm", "length_mm", "travel_marks_mm", "est_seconds")})
+    summary.update({k: info[k] for k in ("bbox_mm", "length_mm", "travel_marks_mm", "est_seconds") if k in info})
     if job.status == "running":
         summary["hint"] = "still drawing: poll job_status(job_id), or call stop() to cancel"
     return summary
@@ -234,6 +253,48 @@ def move_to(x: float, y: float) -> dict[str, object]:
     return _submit([[(x, y)]], "move_to", False)
 
 
+# ---- a drawing that stays on the board ----
+
+
+@mcp.tool()
+@llm_readable_errors
+def resume_drawing() -> dict[str, object]:
+    """Continue the last drawing that was cancelled or interrupted (stop(), a crash, a lost connection) from where the
+    arm stands, instead of redrawing it from its start. Fails if nothing was interrupted or the arm was moved off the
+    drawing's path."""
+    if _busy():
+        raise Busy("a drawing job is running: wait for it or call stop() first")
+    entry = _journal.load()
+    if entry is None:
+        raise ValueError("nothing to resume: no interrupted drawing")
+    if entry.orientation != _arm.orientation:
+        _arm.set_orientation(entry.orientation)
+    info = describe(entry.strokes, _arm.canvas, None)
+    return _run_job("resume", lambda cancel, progress: _arm.draw_strokes(entry.strokes, cancel, progress, resume=True), info)
+
+
+@mcp.tool()
+@llm_readable_errors
+def set_output(mode: str) -> dict[str, object]:
+    """Where drawing tools send their strokes: 'live' (default) moves the arm now; 'board' stores the drawing in the
+    board's memory instead (nothing moves), so it can run after the computer disconnects. Start it with run_on_board."""
+    global _output
+    if mode not in ("live", "board"):
+        raise ValueError("mode must be 'live' or 'board'")
+    _output = mode
+    return {"output": _output, "board_capacity_steps": _link.program_capacity()}
+
+
+@mcp.tool()
+@llm_readable_errors
+def run_on_board(loops: int = 1) -> dict[str, object]:
+    """Start the drawing stored on the board (see set_output). The board ramps to its first point and then draws on
+    its own, so the computer may disconnect. loops=0 repeats until stop(). Returns at once."""
+    if _busy():
+        raise Busy("a drawing job is running: wait for it or call stop() first")
+    return {"started": True, "steps": _arm.run_stored(loops), "loops": loops}
+
+
 # ---- jobs, state, vision ----
 
 
@@ -246,8 +307,10 @@ def job_status(job_id: str = "") -> dict[str, object]:
 
 @mcp.tool()
 def stop() -> dict[str, object]:
-    """Emergency stop: cancel the running drawing job; the arm halts within a millimetre and stays where it is."""
+    """Emergency stop: cancel the running drawing job or the drawing playing on the board; the arm halts and stays where it is."""
     job = _jobs.stop()
+    if job is None:
+        _arm.stop()  # nothing live is running: a stored drawing may be (X on the board is harmless otherwise)
     return job.summary() if job else {"status": "idle"}
 
 

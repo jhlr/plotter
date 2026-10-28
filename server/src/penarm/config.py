@@ -27,12 +27,17 @@ class ArmConfig:
     offset1: float = -10.4
     sign2: float = 1.0
     offset2: float = 103.1
-    # Usable servo range (deg): an SG90 driven near its end stops (500/2400 us) is inaccurate, so keep a margin.
-    servo_min: float = 10.0
-    servo_max: float = 170.0
+    # Usable servo range (deg): the full travel (chosen 2026-10-27 for a larger canvas; an SG90 is less accurate near its end stops).
+    servo_min: float = 0.0
+    servo_max: float = 180.0
     elbow_up: bool = True  # which of the two IK solutions to use
+    edge_margin_mm: float = 10.0  # keep the canvas this far inside the page: the calibration is least accurate at its rim
+    edge_margin_right_mm: float = 10.0  # the right rim can need more where the calibrated model drifts off the board
     seg_mm: float = 1.0  # Cartesian interpolation step for straight lines
-    speed_dps: float = 40.0  # servo speed while drawing (deg/s)
+    feed_mm_s: float = 100.0  # pen-tip speed while drawing (mm/s); faster is smoother (slow servos stick in their dead band)
+    accel_mm_s2: float = 600.0  # how fast the pen tip may speed up or brake (mm/s^2)
+    corner_mm_s: float = 15.0  # tip speed at a stroke's ends and at sharp corners (mm/s)
+    speed_dps: float = 180.0  # servo speed limit (deg/s)
     idle_release_s: float = 120.0  # board releases the servos after this long without commands; 0 = never
 
 

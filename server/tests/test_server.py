@@ -56,3 +56,9 @@ def test_bad_path_ops_come_back_as_readable_tool_errors() -> None:
 def test_a_flat_svg_path_still_fits_a_box() -> None:
     out = call("draw_svg_path", {"d": "M0 0 L10 0", "x": 40, "y": 10, "width": 30, "dry_run": True})
     assert out["inside_canvas"] is True and out["bbox_mm"][2] - out["bbox_mm"][0] == 30.0
+
+
+def test_resume_drawing_has_nothing_to_resume_after_a_finished_drawing() -> None:
+    call("draw_shape", {"kind": "square", "cx": 80, "cy": 20, "size": 12})  # finished: its journal entry is gone
+    with pytest.raises(Exception, match="nothing to resume"):
+        call("resume_drawing", {})

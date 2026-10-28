@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from .config import ArmConfig
 from .errors import Unreachable
 from .kinematics import page_to_servos
+from .mesh import CorrectionMesh
 
 
 @dataclass(frozen=True)
@@ -25,25 +26,29 @@ class Canvas:
         return -eps <= x <= self.w + eps and -eps <= y <= self.h + eps
 
 
-def _reachable(cfg: ArmConfig, x: float, y: float) -> bool:
+def _reachable(cfg: ArmConfig, x: float, y: float, mesh: CorrectionMesh | None = None) -> bool:
+    m = cfg.edge_margin_mm
+    if not (m <= x <= cfg.page_w - cfg.edge_margin_right_mm and m <= y <= cfg.page_h - m):
+        return False
     try:
-        page_to_servos(cfg, x, y)
+        page_to_servos(cfg, *(mesh.corrected(x, y) if mesh else (x, y)))  # the arm aims where the mesh says
     except Unreachable:
         return False
     return True
 
 
-def _grid(cfg: ArmConfig, step: float) -> list[list[bool]]:
+def _grid(cfg: ArmConfig, step: float, mesh: CorrectionMesh | None = None) -> list[list[bool]]:
     cols, rows = int(cfg.page_w / step) + 1, int(cfg.page_h / step) + 1
-    return [[_reachable(cfg, c * step, r * step) for c in range(cols)] for r in range(rows)]
+    return [[_reachable(cfg, c * step, r * step, mesh) for c in range(cols)] for r in range(rows)]
 
 
 def portrait_canvas(
-    cfg: ArmConfig, step: float = 2.0, margin: float = 3.0, aspect: float = 1.5, side: str | None = None
+    cfg: ArmConfig, step: float = 2.0, margin: float = 3.0, aspect: float = 1.5, side: str | None = None,
+    mesh: CorrectionMesh | None = None,
 ) -> Canvas:
     """Largest-area reachable rectangle at least `aspect` times taller than wide. side='left'/'right' keeps it in
     that fifth of the page (the arm's side 'wings', away from the central band)."""
-    ok = _grid(cfg, step)
+    ok = _grid(cfg, step, mesh)
     rows, cols = len(ok), len(ok[0])
     best = (0, 0, 0, 0, 0)  # area, left col, bottom row, width cols, height rows
     for wc in range(3, cols):
@@ -64,9 +69,9 @@ def portrait_canvas(
     return Canvas(left * step + margin, bottom * step + margin, width_mm, height_mm)
 
 
-def safe_canvas(cfg: ArmConfig, step: float = 2.0, margin: float = 3.0) -> Canvas:
+def safe_canvas(cfg: ArmConfig, step: float = 2.0, margin: float = 3.0, mesh: CorrectionMesh | None = None) -> Canvas:
     """Largest-area rectangle whose grid points are all reachable, shrunk by `margin` mm on every side."""
-    ok = _grid(cfg, step)
+    ok = _grid(cfg, step, mesh)
     cols, rows = len(ok[0]), len(ok)
     heights = [0] * cols
     best = (0, 0, 0, 0, 0)  # area, left col, bottom row, width cols, height rows

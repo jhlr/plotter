@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .config import ArmConfig
 from .kinematics import fk, servos_to_joints
+from .mesh import CorrectionMesh
 
 POSE_FIELDS = ("offset1", "offset2", "base_x", "base_y")
 LENGTH_FIELDS = ("l1", "l2")
@@ -184,11 +185,13 @@ class CalibrationStore:
         self.points: list[Observation] = []
         self.params: dict[str, float] = {}
         self.rmse_mm: float | None = None
+        self.mesh: CorrectionMesh | None = None
         if self.path.exists():
             data = json.loads(self.path.read_text())
             self.points = [Observation(**p) for p in data.get("points", [])]
             self.params = {k: float(v) for k, v in data.get("params", {}).items() if k in SAVED_FIELDS}
             self.rmse_mm = data.get("rmse_mm")
+            self.mesh = CorrectionMesh.from_json(data["mesh"]) if data.get("mesh") else None
 
     def apply(self, cfg: ArmConfig) -> ArmConfig:
         return _updated(cfg, self.params)
@@ -210,7 +213,9 @@ class CalibrationStore:
         return res
 
     def save(self) -> None:
-        data = {"points": [vars(p) for p in self.points], "params": self.params, "rmse_mm": self.rmse_mm}
+        data: dict[str, object] = {"points": [vars(p) for p in self.points], "params": self.params, "rmse_mm": self.rmse_mm}
+        if self.mesh:
+            data["mesh"] = self.mesh.to_json()
         self.path.write_text(json.dumps(data, indent=2))
 
 

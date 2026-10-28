@@ -5,9 +5,10 @@ import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import IO, Protocol
+from typing import IO, NamedTuple, Protocol
 
 from .errors import Cancelled
+from .program import encode
 
 import serial
 
@@ -17,6 +18,15 @@ except ImportError:  # Windows: no advisory file locks
     fcntl = None  # type: ignore[assignment]
 
 
+class Waypoint(NamedTuple):
+    """One servo target and the time the arm should take to reach it (both servos move together; 0 = as fast as the
+    speed limit allows). A chain of waypoints is one continuous move: the board never stops between them."""
+
+    a: float
+    b: float
+    ms: int = 0
+
+
 class Link(Protocol):
     resets: int  # incremented whenever the board is seen to have restarted
 
@@ -24,11 +34,18 @@ class Link(Protocol):
     def set_speed(self, dps: float) -> None: ...
     def read(self) -> tuple[int, int, float, float]: ...
     def set_idle_release(self, seconds: float) -> None: ...
+    def program_capacity(self) -> int: ...
+    def store_program(self, points: list[tuple[float, float]], step_ms: int = 0) -> int: ...
+    def run_program(self, loops: int = 1) -> int: ...
+    def abort(self) -> None: ...
     def run_path(
-        self, points: list[tuple[float, float]], should_cancel: Callable[[], bool] | None = None,
+        self, points: list[Waypoint], should_cancel: Callable[[], bool] | None = None,
         progress: Callable[[int, int], None] | None = None,
     ) -> None: ...
 
+
+# A byte lost on the wire can leave a truncated reply that still starts like a valid one: only whole lines count.
+_PROTOCOL_LINE = re.compile(r"OK.*|ERR.*|FULL|R \d+ \d+ -?[\d.]+ -?[\d.]+|S( \d+){5}|P( \d+){4,5}")
 
 _LOST_QUEUE = "the board lost its queue (it restarted?): the arm may be anywhere, check get_state and redraw"
 
@@ -124,14 +141,14 @@ class SerialLink:
         self._settle()
 
     def _reply(self, wait: float) -> str | None:
-        """Next protocol line (OK/ERR/R) within `wait` s; other or mangled lines are skipped."""
+        """Next protocol line (OK/ERR/R/S/P/FULL) within `wait` s; other or mangled lines are skipped."""
         deadline = time.monotonic() + wait * self._scale
         buf = b""
         while time.monotonic() < deadline:
             buf += self.ser.readline()  # partial line on the short port timeout, keep accumulating
             if buf.endswith(b"\n"):
                 line, buf = buf.decode(errors="replace").strip(), b""
-                if line.startswith(("OK", "ERR", "R ", "S ", "FULL")):
+                if _PROTOCOL_LINE.fullmatch(line):
                     return line
         return None
 
@@ -190,7 +207,7 @@ class SerialLink:
         self.target = None
 
     def run_path(
-        self, points: list[tuple[float, float]], should_cancel: Callable[[], bool] | None = None,
+        self, points: list[Waypoint], should_cancel: Callable[[], bool] | None = None,
         progress: Callable[[int, int], None] | None = None,
     ) -> None:
         """Hand servo waypoints to the board's queue and stay ahead of it. The board keeps moving on its own: a slow or
@@ -208,9 +225,14 @@ class SerialLink:
                 self.abort()
                 raise Cancelled()
             while sent < total and free > 0:
-                a, b = points[sent]
+                a, b, ms = points[sent]
                 try:
-                    reply = self._cmd(f"Q {seq} {a:.2f} {b:.2f}")
+                    for _ in range(self.retries):  # "OK 1" cut to "OK" by a lost byte: resend, the seq makes it idempotent
+                        reply = self._cmd(f"Q {seq} {a:.2f} {b:.2f} {ms}")
+                        if reply.startswith("FULL") or len(reply.split()) > 1:
+                            break
+                    else:
+                        raise TimeoutError(f"garbled replies to Q {seq}")
                 except RuntimeError as exc:
                     if "ERR seq" in str(exc):  # its counter is not ours: it restarted and lost the queue
                         raise RuntimeError(_LOST_QUEUE) from exc
@@ -222,6 +244,10 @@ class SerialLink:
                 seq = (seq + 1) & 0xFFFF
                 sent += 1
             nxt, executed, queued, free, moving = self._status()
+            for _ in range(2):  # a lost digit can leave a well-formed but wrong reply: believe a restart only if it persists
+                if nxt == seq:
+                    break
+                nxt, executed, queued, free, moving = self._status()
             if nxt != seq:  # the board's counter is not where ours is: it restarted and lost the queue
                 raise RuntimeError(_LOST_QUEUE)
             if progress:
@@ -230,7 +256,7 @@ class SerialLink:
                 break
             if free == 0 or sent == total:
                 time.sleep(0.02 * self._scale)
-        self.target = points[-1]
+        self.target = (points[-1].a, points[-1].b)
 
     def set_idle_release(self, seconds: float) -> None:
         """Ask the board to release the servos after `seconds` of silence (0 = never). Older firmware says ERR."""
@@ -238,6 +264,34 @@ class SerialLink:
             self._cmd(f"W {int(seconds)}")
         except RuntimeError:
             pass
+
+    def program_capacity(self) -> int:
+        """Steps the board can keep in its EEPROM (0 on boards without the feature or with older firmware)."""
+        try:
+            return int(self._cmd("PI").split()[4])
+        except RuntimeError:
+            return 0
+
+    def store_program(self, points: list[tuple[float, float]], step_ms: int = 0) -> int:
+        """Write the drawing into the board's EEPROM (each step takes step_ms) and return its step count. Nothing plays until run_program; a
+        half-written drawing is never played (the board commits it only on the last command)."""
+        start, steps = encode(points)
+        cap = self.program_capacity()
+        if len(steps) > cap:
+            raise ValueError(f"the drawing needs {len(steps)} steps but the board keeps {cap}")
+        if not steps:
+            raise ValueError("the drawing does not move the arm")
+        self._cmd(f"PB {start[0]} {start[1]} {len(steps)} {step_ms}")
+        for i in range(0, len(steps), 8):
+            self._cmd(f"PD {i} " + " ".join(f"{da} {db}" for da, db in steps[i : i + 8]))
+        self._cmd("PE")
+        return len(steps)
+
+    def run_program(self, loops: int = 1) -> int:
+        """Start the stored drawing (0 loops = until abort). The board plays it on its own: the host may disconnect."""
+        reply = self._cmd(f"G {loops}")  # answered at once: the board ramps to the start pose after the reply
+        self.target = None
+        return int(reply.split()[1])
 
 
 class SimLink:
@@ -247,12 +301,33 @@ class SimLink:
         self.pos = (90.0, 90.0)
         self.history: list[tuple[float, float]] = []
         self.resets = 0
+        self.program: tuple[tuple[int, int], list[tuple[int, int]]] = ((0, 0), [])
 
     def move(self, s1: float, s2: float) -> None:
         self.pos = (s1, s2)
         self.history.append(self.pos)
 
     def set_speed(self, dps: float) -> None:
+        pass
+
+    def program_capacity(self) -> int:
+        return 492
+
+    def store_program(self, points: list[tuple[float, float]], step_ms: int = 0) -> int:
+        start, steps = encode(points)
+        self.program = (start, steps)
+        return len(steps)
+
+    def run_program(self, loops: int = 1) -> int:
+        start, steps = self.program
+        a, b = start
+        for da, db in steps:
+            a, b = a + da, b + db
+        self.pos = (a / 10.0, b / 10.0)
+        self.history.append(self.pos)
+        return len(steps)
+
+    def abort(self) -> None:
         pass
 
     def read(self) -> tuple[int, int, float, float]:
@@ -262,10 +337,10 @@ class SimLink:
         pass
 
     def run_path(
-        self, points: list[tuple[float, float]], should_cancel: Callable[[], bool] | None = None,
+        self, points: list[Waypoint], should_cancel: Callable[[], bool] | None = None,
         progress: Callable[[int, int], None] | None = None,
     ) -> None:
-        for i, (a, b) in enumerate(points, 1):
+        for i, (a, b, _) in enumerate(points, 1):
             if should_cancel and should_cancel():
                 raise Cancelled()
             self.move(a, b)

@@ -8,7 +8,7 @@ Code: ``. 2-link planar arm, 2 SG90 servos + 2 feedback pots, pencil in a clamp 
 
 ## Boards (ESP32 or Arduino Uno)
 `firmware/src/config.h` is the only board-specific file (pins, servo lib, ADC range). Envs: `esp32`, `uno` (main firmware) and `servotest`, `servotest_uno` (standalone serial servo test: `1 90`, `2 90`, `c`, `s`, `r`).
-Uno pins: proximal servo (1) D10, distal servo (2) D9, pots A0/A1 (10-bit ADC, 0..1023 vs ESP32's 0..4095; `?` reports `adcmax`). ESP32: servos GPIO18/19, pots GPIO34/35.
+Uno pins: proximal servo (1) D9, distal servo (2) D8, pots A0/A1 (10-bit ADC, 0..1023 vs ESP32's 0..4095; `?` reports `adcmax`). ESP32: servos GPIO18/19, pots GPIO34/35.
 
     cd firmware && pio run -e uno -t upload        # or -e esp32 / -e servotest_uno
 
