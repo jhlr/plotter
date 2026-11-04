@@ -62,7 +62,7 @@ A two-servo pen-plotter arm. Provider-neutral usage guide:
 """
 
 mcp = MCPServer("penarm", instructions=GUIDE)
-_port = os.environ.get("PENARM_PORT")
+_port = os.environ.get("PENARM_PORT") or None  # empty (an unset ${PENARM_PORT:-} in .mcp.json) means simulator
 _link: Link = SerialLink(_port) if _port else SimLink()
 _store = CalibrationStore()
 # the interrupted drawing is kept on disk (hardware only) so resume_drawing works after this process dies

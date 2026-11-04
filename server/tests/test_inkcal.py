@@ -10,7 +10,7 @@ RECT = (23.0, 163.0, 201.0, 223.0)
 
 
 def _photo(top_error: float, right_error: float, colour: tuple[int, int, int] = (30, 140, 40)) -> np.ndarray:
-    """A synthetic phone photo: white board, green rectangle whose top edge is `top_error` mm too high and whose right
+    """A synthetic phone photo: white board, a rectangle in `colour` whose top edge is `top_error` mm too high and whose right
     edge is `right_error` mm too far right."""
     mm_to_px = homography([(0.0, 0.0), (230.0, 0.0), (230.0, 330.0), (0.0, 330.0)], CORNERS_PX)
     x0, y0, x1, y1 = RECT
@@ -48,7 +48,7 @@ def test_a_second_pass_adds_only_the_error_that_is_left() -> None:
 
 def test_pen_box_is_ignored() -> None:
     img = _photo(0.0, 0.0)
-    cv2.rectangle(img, (300, 400), (318, 600), (30, 140, 40), -1)  # a thin green pen barrel (not a blot: it survives that filter)
+    cv2.rectangle(img, (300, 400), (318, 600), (30, 140, 40), -1)  # a thin pen barrel (not a blot: it survives that filter)
     with_pen = ink_pixels(img, [])
     without = ink_pixels(img, [(290, 390, 330, 610)])
     assert len(without) < len(with_pen)
@@ -60,8 +60,26 @@ def test_corners_argument_needs_four_points() -> None:
         _parse_corners("1,2 3,4")
 
 
+PENS = {"green": (30, 140, 40), "blue": (170, 60, 20), "red": (30, 30, 200), "black": (40, 35, 35), "orange": (30, 120, 240),
+        "purple": (150, 40, 130), "yellow marker": (60, 215, 235)}
+
+
+@pytest.mark.parametrize("pen", PENS)
+def test_auto_reads_any_pen_to_the_same_rectangle(pen: str) -> None:
+    got = to_board_mm(ink_pixels(_photo(top_error=5.0, right_error=0.0, colour=PENS[pen]), []), CORNERS_PX, 230.0, 330.0)
+    assert abs(float(np.percentile(got[:, 1], 99.5)) - (RECT[3] + 5.0)) < 2.0
+
+
+def test_auto_ignores_uneven_lighting() -> None:
+    img = _photo(top_error=5.0, right_error=0.0, colour=PENS["blue"])
+    shade = np.linspace(1.0, 0.7, img.shape[1], dtype=np.float32)[None, :, None]  # light fades towards one side
+    shaded = np.where(img > 250, (img * shade).astype(np.uint8), img)
+    got = to_board_mm(ink_pixels(shaded, []), CORNERS_PX, 230.0, 330.0)
+    assert abs(float(np.percentile(got[:, 1], 99.5)) - (RECT[3] + 5.0)) < 2.0
+
+
 @pytest.mark.parametrize("ink,bgr", [("green", (30, 140, 40)), ("blue", (170, 60, 20)), ("red", (30, 30, 200)), ("dark", (40, 35, 35))])
-def test_every_ink_colour_is_read_to_the_same_rectangle(ink: str, bgr: tuple[int, int, int]) -> None:
+def test_colour_hints_read_the_same_rectangle(ink: str, bgr: tuple[int, int, int]) -> None:
     got = to_board_mm(ink_pixels(_photo(top_error=5.0, right_error=0.0, colour=bgr), [], ink), CORNERS_PX, 230.0, 330.0)
     assert abs(float(np.percentile(got[:, 1], 99.5)) - (RECT[3] + 5.0)) < 2.0
 

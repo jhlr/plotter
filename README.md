@@ -1,10 +1,48 @@
-# Pen plotter: LLM -> MCP -> Arduino -> 2 servos
+# Pen plotter you drive with any LLM agent (MCP)
 
-A 2-link planar arm (two SG90 servos, 3D-printed parts) that draws what an LLM asks for. A Python server exposes drawing tools over MCP (Claude Desktop/Code, or any client that speaks MCP; there is also a Google ADK agent). The server turns shapes into servo angles and streams them to firmware on an Arduino Uno (ESP32 also supported). A phone photo of a drawn rectangle is used to correct the arm's position error.
+A 2-link planar arm (two SG90 servos, 3D-printed parts, an Arduino Uno) that draws what an AI agent asks for. The brain is an **MCP server** (`server/`): any agent that speaks MCP can connect and call tools like `draw_shape`, `draw_svg_path` or `draw_path`. It works with **any pen, pencil or marker**: nothing in the software depends on the ink.
 
-    LLM  --MCP-->  server/ (Python: shapes, IK, calibration, jobs)  --serial-->  firmware/ (Uno)  -->  2 servos
+    agent (any MCP client)  --MCP/stdio-->  server/ (Python: shapes, IK, jobs)  --serial-->  firmware/ (Uno)  -->  2 servos
 
-The arm has **no pen lift**: travel moves mark the paper, so every drawing starts on a clean sheet and is one continuous trace.
+The arm has **no pen lift**: travel moves mark the paper, so each drawing starts on a clean sheet and is one continuous trace.
+
+> **Handing this repo to an AI agent?** Point it at [`AGENTS.md`](AGENTS.md): it is the step-by-step runbook an agent can follow, and says which steps need a human (wiring, flashing, swapping the sheet, taking a photo).
+
+## 0. Try it in 2 minutes, no hardware
+
+You need [uv](https://docs.astral.sh/uv/) and Python >= 3.11. The simulator is built in; it draws nothing physical but runs every tool.
+
+    git clone https://github.com/jhlr/plotter && cd plotter
+    make setup                      # or: cd server && uv sync --all-extras && uv run pytest
+
+Then connect your agent. The server is a plain **stdio MCP server**, so every client needs the same three things:
+
+| | |
+|---|---|
+| command | `uv` |
+| args | `["--directory", "/ABSOLUTE/PATH/plotter/server", "run", "penarm-mcp"]` |
+| env | `PENARM_PORT=<serial port>` for the real arm, **leave it unset for the simulator** |
+
+- **Claude Code**, from inside the cloned repo: it picks up the committed [`.mcp.json`](.mcp.json) on its own (approve it when asked). Or add it anywhere with `claude mcp add penarm -e PENARM_PORT=/dev/cu.usbserial-XXXX -- uv --directory /ABSOLUTE/PATH/plotter/server run penarm-mcp` (drop `-e ...` for the simulator, add `-s user` for every project).
+- **Claude Desktop** and most other clients (Cursor, Windsurf, Cline, ...) use the same JSON shape in their MCP settings file (Claude Desktop: Settings -> Developer -> Edit Config):
+
+        {
+          "mcpServers": {
+            "penarm": {
+              "command": "uv",
+              "args": ["--directory", "/ABSOLUTE/PATH/plotter/server", "run", "penarm-mcp"],
+              "env": { "PENARM_PORT": "/dev/cu.usbserial-XXXX" }
+            }
+          }
+        }
+
+  If the app cannot find `uv`, put its full path (`which uv`) in `command`. Restart the client after editing.
+- **Your own agent or script**: any MCP SDK client works (`StdioServerParameters(command="uv", args=[...])`). `agent/` has a ready Google ADK agent that runs any LLM (see section 9).
+- **Without a client**: `make sim`, or `PENARM_PORT=... uv run penarm-mcp`.
+
+Then ask the agent: *"call `canvas_info`, then draw a heart with `dry_run=true`"*. The server ships its own usage guide (MCP `instructions`), so the agent needs no other prompt. Only one process can hold the serial port at a time.
+
+When you move to hardware, follow sections 1-3 and 5-6 below.
 
 ## 1. What you need
 
@@ -14,7 +52,7 @@ The arm has **no pen lift**: travel moves mark the paper, so every drawing start
 | 2 x SG90 servos | |
 | 5 V supply, >= 2 A | **Servos never run from the Uno's 5 V pin.** Tie the supply GND to the Uno GND |
 | 3D-printed parts | `pecas_impressao/`: `BASE.stl`, `ELO_1.stl`, `ELO_2.stl`, `SUPORTE_LAPIS.stl`, and `engrenagem_trilho.scad` / `.stl` (gear + servo coupling, one print) |
-| A pen | Felt-tip or **ballpoint**, see "Choosing the pen" |
+| A pen | Any pen or marker, see section 4 |
 | A clipboard / flat board | Ours is 230 x 330 mm; the arm's base sits at its bottom edge. Any flat, rigid board works if you measure it |
 | Paper, ruler, a phone | The phone photographs the calibration rectangle |
 | Optional | 2 potentiometers on A0/A1 (not wired on our arm; not needed), a webcam for `locate_pencil` |
@@ -51,36 +89,11 @@ Wait for **"verified"** at the end. A flash whose verify step fails (`avr_read()
 
 **3.3 Run the tests (no hardware needed).**
 
-    cd ../server
-    uv sync --all-extras && uv run pytest        # all pass
+    make setup          # uv sync --all-extras && uv run pytest in server/; all pass
 
 **3.4 Find the serial port:** macOS `ls /dev/cu.usbserial*`, Linux `ls /dev/ttyUSB*`, Windows Device Manager (`COM3`). Opening the port resets the Uno (DTR): the first command takes ~2 s and any drawing stored on the board stops. Only one process may hold the port; the server takes a lock.
 
-**3.5 Connect an MCP client.** Leave `PENARM_PORT` out to use the built-in simulator (no hardware, good for a first look).
-
-Run `uv sync --all-extras` in `server/` once, then pick one:
-
-**Claude Code (one line, from anywhere):**
-
-    claude mcp add penarm -e PENARM_PORT=/dev/cu.usbserial-XXXX -- uv --directory /ABSOLUTE/PATH/plotter/server run penarm-mcp
-
-(simulator: drop the `-e ...` part; Windows port: `COM3`). Check with `claude mcp list`, or `/mcp` inside a session. Add `-s user` to make it available in every project.
-
-**Claude Desktop:** Settings -> Developer -> Edit Config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows), add, then restart the app:
-
-    {
-      "mcpServers": {
-        "penarm": {
-          "command": "uv",
-          "args": ["--directory", "/ABSOLUTE/PATH/plotter/server", "run", "penarm-mcp"],
-          "env": { "PENARM_PORT": "/dev/cu.usbserial-XXXX" }
-        }
-      }
-    }
-
-If the app cannot find `uv`, use its full path in `command` (`which uv`). Add `"PENARM_MODE": "calibrate"` to `env` for the pose calibration in section 5. Then ask: "call canvas_info". Only one client can hold the serial port at a time.
-
-Without a client: `PENARM_PORT=/dev/cu.usbserial-XXXX uv run penarm-mcp`.
+**3.5 Connect your agent** exactly as in section 0, now with `PENARM_PORT` set to the port from 3.4 (on Windows `COM3`). Ask for `canvas_info`: `"simulated": false` confirms it is talking to the board.
 
 **3.6 Calibrate your arm (required: `calibration.json` is yours alone).** The defaults in `config.py` describe *our* arm. Your servo horns, base position and board differ, so a drawing without calibration will be the wrong size and shape. `server/calibration.json` is git-ignored and created by the steps below. Do these two stages in order:
 
@@ -89,18 +102,17 @@ Without a client: `PENARM_PORT=/dev/cu.usbserial-XXXX uv run penarm-mcp`.
 
 **3.7 Draw.** Put a **clean sheet** under the pen, ask for `canvas_info` first (every tool draws inside that canvas), then try `dry_run=true` on anything new. The first real drawing should be small and well inside the sheet. Do not touch the arm while it draws.
 
-## 4. Choosing the pen
+## 4. Any pen works
 
-Anything that marks the paper works for drawing. For the **rectangle calibration** the photo is read by colour, so tell the tool which ink it is:
+Ballpoint, felt-tip, gel, pencil, a dry-erase marker on a whiteboard: the arm only needs something that marks the surface. The pen holder (`SUPORTE_LAPIS.stl`) has an **11.4 mm** hole: wrap thinner pens in tape or paper until they sit tight, and the tip must just touch the paper with the arm at rest.
 
-| Pen | `penarm-inkcal measure ... --ink` |
-|---|---|
-| green felt-tip (what we used, the default) | `green` |
-| blue ballpoint | `blue` |
-| red | `red` |
-| black / very dark blue | `dark` |
+The **rectangle calibration** (section 6) reads the line from a photo, and that reader is colour-agnostic: by default (`--ink auto`) anything clearly darker or more coloured than the paper around it counts as ink, so shadows and uneven light are ignored. It does not matter whether the pen is black, blue, red or green. What does matter:
+- **Contrast.** A pale pen (yellow highlighter, light pencil on cream paper) can fall below the threshold. Use a pen that is clearly visible in the photo; the tool tells you when it finds too little.
+- **A sharp, evenly lit full-resolution photo**, taken close, with no shadow of your hand. Thin ballpoint lines need this more than a felt-tip.
+- **Always open the `--overlay` image** and check that the ink was picked up (ink in green, plan in red *in the overlay*; that colour is the debug drawing, not your pen). Hide anything that is not the drawing (the pen barrel, the arm) with `--mask x0,y0,x1,y1` (pixels, repeatable).
+- If `auto` picks up the wrong things, name a colour with `--ink green|blue|red|dark` (`dark` = black or very dark ink, judged against the photo's own paper brightness).
 
-A ballpoint line is thinner and paler than a felt-tip: photograph close and sharp (full-resolution file), under even light with no shadow of the arm or your hand, and always open the `--overlay` image to confirm the ink was picked up (ink in green, plan in red) before trusting a number. A `dark` ink is judged against the photo's own paper brightness, so shadows and a dark board edge count as ink: use `--mask x0,y0,x1,y1` (pixels, repeatable) to hide the pen barrel, the arm, or anything else that is not the drawing. A ballpoint needs more downward force than a felt-tip, which adds friction and makes the arm lag; draw slowly (30-45 mm/s) and expect a bigger initial error than ours.
+A ballpoint needs more downward force than a felt-tip, which adds friction and makes the arm lag: draw slowly (30-45 mm/s) and expect a bigger initial error than ours (we calibrated with a felt-tip).
 
 ## 5. Pose calibration (`PENARM_MODE=calibrate`)
 
@@ -127,9 +139,9 @@ It draws the canvas rectangle at 30 mm/s with the current mesh and parks the arm
 2. Open the **full-resolution** photo in an image viewer and note the pixel `x,y` of the four corners of the **board** (not the paper), named by what they are in the board frame: BL = the corner nearest the servos on the left, BR, TR, TL going round. Do not name them by where they land in the photo.
 3. Measure:
 
-        uv run penarm-inkcal measure photo.jpg --corners "BLx,BLy BRx,BRy TRx,TRy TLx,TLy" --ink green --overlay check.png
+        uv run penarm-inkcal measure photo.jpg --corners "BLx,BLy BRx,BRy TRx,TRy TLx,TLy" --overlay check.png
 
-   It prints the planned rectangle, the rms and max edge error in mm, and how many positions on each edge were read. **Open `check.png`.** If pieces of the ink are missing or it picked up the pen, fix it with `--mask` or `--ink` first.
+   It prints the planned rectangle, the rms and max edge error in mm, and how many positions on each edge were read. **Open `check.png`.** If pieces of the ink are missing or it picked up the pen or the arm, fix it with `--mask` (or name the colour with `--ink`) first.
 4. If it looks right, run the same command with `--update-mesh` (folds the leftover error into `calibration.json`, gain 0.8). Draw again on a **new** sheet and repeat until the error stops shrinking (2-3 rounds). Our rms went from ~11 mm to 4-7 mm and the median to ~2.4-3.6 mm.
 
 Rules that cost us rounds:
@@ -178,7 +190,7 @@ The server computes a **canvas**: the largest rectangle the arm can fully reach 
 - **Portable tool schemas:** no `$ref`, unions, consts or tuples; optional arguments use defaults, never null. `tests/test_schema_portability.py` guards it, and the server carries its own provider-neutral usage guide (MCP `instructions`).
 
 ### Vision (optional)
-An overhead camera gives the LLM `locate_pencil` numbers (x/y mm, frames seen, spread, error vs the kinematic estimate), never frames. `uv run penarm-markers` writes `markers/marker_{0..3}.png`; print them at 20 mm and stick them where `VisionConfig` says. The pencil tag is a green blob (tune `hsv_lo/hsv_hi`). Set `PENARM_CAMERA=0` to enable. Tested only on a synthetic perspective scene (< 1 mm), not on a real camera.
+An overhead camera gives the LLM `locate_pencil` numbers (x/y mm, frames seen, spread, error vs the kinematic estimate), never frames. `uv run penarm-markers` writes `markers/marker_{0..3}.png`; print them at 20 mm and stick them where `VisionConfig` says. The pen is found by a coloured tag stuck on it (a green eraser end by default; any strongly coloured tag works, tune `hsv_lo/hsv_hi` in `config.py`). Set `PENARM_CAMERA=0` to enable. Tested only on a synthetic perspective scene (< 1 mm), not on a real camera.
 
 ### Agent (Google ADK)
 `agent/` is a separate uv project (ADK pins `mcp<2`, the server uses mcp 2.x). `root_agent` runs any LLM via `PENARM_MODEL` (`gemini-*` native; `provider/model` goes through LiteLLM, e.g. `anthropic/claude-sonnet-5-5`, `openai/gpt-4o`, `ollama_chat/llama3.1`) and spawns the MCP server over stdio.
@@ -192,3 +204,6 @@ An overhead camera gives the LLM `locate_pencil` numbers (x/y mm, frames seen, s
 2. Pots are not wired, so there is no closed loop. Wiring them (A0/A1) is the biggest accuracy gain left.
 3. Pen lift (3rd servo) -> `pen_up`/`pen_down` tools.
 4. The kinematic ink fit used to get the offsets/gains was done with scratch scripts, not a packaged command; new arms use the photo pose fit (section 5) plus the mesh (section 6).
+
+## 11. License
+GNU GPL v3 or later (`LICENSE`), a copyleft license: you can use, study, change and share this project, but anything you distribute that is based on it must stay under the same terms with its source available. It covers the code, the firmware, the docs, and the printable parts in `pecas_impressao/`.

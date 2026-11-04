@@ -8,6 +8,7 @@ Corners are the four corners of the clipboard board in photo pixels, named by th
 the bottom edge is the one nearest the arm's servos, x to the right and y away from them (as seen from the arm base).
 A photo taken from any side works as long as each corner is labelled by what it is, not by where it lands in the photo."""
 import argparse
+import signal
 import json
 import sys
 from dataclasses import replace
@@ -28,7 +29,10 @@ Pts = NDArray[np.float64]
 Rect = tuple[float, float, float, float]  # x0, y0, x1, y1 in page mm
 EDGE_STEP_MM = 6.0
 LAB_L_MAX = 205
-INKS = ("green", "blue", "red", "dark")  # `dark` = black or very dark blue ballpoint: judged against the photo's own paper brightness
+INKS = ("auto", "green", "blue", "red", "dark")  # `auto` = any pen; the others are colour hints for a photo `auto` struggles with
+AUTO_DELTA = 20.0  # `auto`: Lab distance from the paper around the pixel above which it is ink (JPEG noise is ~3-5)
+AUTO_SCALE = 8  # the paper colour is estimated on a photo this many times smaller, with a median far wider than a stroke
+AUTO_WINDOW = 51
 DARK_DROP = 70  # a `dark` ink pixel is this much darker (Lab L) than the median pixel of the photo
 
 
@@ -56,6 +60,11 @@ def thin(mask: NDArray[np.uint8]) -> NDArray[np.uint8]:
 def _is_ink(lab: NDArray[np.uint8], ink: str) -> NDArray[np.bool_]:
     """Pixels whose colour is the ink's, from Lab (paper is ~127 on a and b; HSV saturation loses thin strokes)."""
     light, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
+    if ink == "auto":
+        h, w = light.shape
+        small = cv2.resize(lab, (max(1, w // AUTO_SCALE), max(1, h // AUTO_SCALE)), interpolation=cv2.INTER_AREA)
+        paper = cv2.resize(cv2.medianBlur(small, AUTO_WINDOW), (w, h), interpolation=cv2.INTER_LINEAR)
+        return np.asarray(np.linalg.norm(lab.astype(np.float32) - paper.astype(np.float32), axis=2) > AUTO_DELTA)
     if ink == "green":
         return (a < 115) & (light < LAB_L_MAX)  # green ink drops a below ~112
     if ink == "red":
@@ -67,7 +76,7 @@ def _is_ink(lab: NDArray[np.uint8], ink: str) -> NDArray[np.bool_]:
     raise ValueError(f"unknown ink {ink!r}: choose one of {INKS}")
 
 
-def ink_pixels(photo: NDArray[np.uint8], masked_out: list[tuple[int, int, int, int]], ink: str = "green") -> NDArray[np.int64]:
+def ink_pixels(photo: NDArray[np.uint8], masked_out: list[tuple[int, int, int, int]], ink: str = "auto") -> NDArray[np.int64]:
     """(x, y) pixels of the one-pixel centreline of the ink; `masked_out` boxes (x0, y0, x1, y1 px) hide the pen."""
     mask = np.where(_is_ink(np.asarray(cv2.cvtColor(photo, cv2.COLOR_BGR2LAB), dtype=np.uint8), ink), 255, 0).astype(np.uint8)
     for x0, y0, x1, y1 in masked_out:
@@ -137,23 +146,33 @@ def _parse_corners(text: str) -> list[tuple[float, float]]:
     return [(p[0], p[1]) for p in pts]
 
 
-def draw(port: str, feed: float, speed: float) -> None:
+def draw(port: str, feed: float, speed: float, loops: int = 1) -> None:
     store = CalibrationStore()
     cfg = replace(store.apply(DEFAULT), feed_mm_s=feed, speed_dps=speed)
     link = SerialLink(port)
+    for sig in (signal.SIGINT, signal.SIGTERM):  # also from a background shell, where SIGINT would be ignored
+        signal.signal(sig, signal.default_int_handler)
     try:
         arm = Arm(cfg, link, mesh=store.mesh)
         c = arm.canvas
         print(f"canvas {c.w:.0f} x {c.h:.0f} mm at page ({c.x0:.0f},{c.y0:.0f}); mesh {'on' if arm.mesh else 'off'}")
         arm.draw_strokes([[(0.0, 0.0)]])  # get to the start first (the pen has no lift: this travel marks the paper)
-        arm.draw_strokes([rect_points(0.0, 0.0, c.w, c.h)])
+        n = 0
+        try:
+            while loops == 0 or n < loops:  # 0 = until Ctrl-C; the loop runs on the host, nothing is written to the board
+                arm.draw_strokes([rect_points(0.0, 0.0, c.w, c.h)])
+                n += 1
+                print(f"loop {n}" + (f"/{loops}" if loops else ""), flush=True)
+        except KeyboardInterrupt:
+            arm.stop()
+            print(f"stopped after {n} loops")
         arm.draw_strokes([[(c.w / 2, 0.0)]])  # park at the bottom middle: the arm then hides only a sliver of the drawing
         print("done: photograph the whole clipboard now (four corners in view, arm out of the way)")
     finally:
         link.close()
 
 
-def run(photo_path: str, corners: str, masks: list[str], update: bool, gain: float, overlay: str | None, ink_color: str = "green") -> None:
+def run(photo_path: str, corners: str, masks: list[str], update: bool, gain: float, overlay: str | None, ink_color: str = "auto") -> None:
     store = CalibrationStore()
     cfg = store.apply(DEFAULT)
     photo = cv2.imread(photo_path)
@@ -162,14 +181,14 @@ def run(photo_path: str, corners: str, masks: list[str], update: bool, gain: flo
     boxes = [tuple(int(v) for v in m.split(",")) for m in masks]
     px = ink_pixels(photo, boxes, ink_color)  # type: ignore[arg-type]
     if len(px) < 500:
-        raise SystemExit(f"only {len(px)} ink pixels found: is the ink really {ink_color} (see --ink) and the photo sharp? mask the pen with --mask")
+        raise SystemExit(f"only {len(px)} ink pixels found: is the photo sharp and the line dark enough against the paper? try --ink with a colour, and mask the pen with --mask")
     ink = to_board_mm(px, _parse_corners(corners), cfg.page_w, cfg.page_h)
     rect = _planned_rect(cfg, store.mesh)
     mesh, stats = measure(ink, rect, store.mesh, gain)
     print(json.dumps({"rect_mm": rect, **stats}, indent=1))
     if overlay:
         _write_overlay(overlay, ink, rect)
-        print("overlay:", overlay, "(ink green, plan red): look at it before trusting the numbers")
+        print("overlay:", overlay, "(ink green, plan red in the overlay): look at it before trusting the numbers")
     if update:
         store.mesh = mesh
         store.save()
@@ -201,17 +220,18 @@ def main(argv: list[str] | None = None) -> None:
     d.add_argument("--port", required=True)
     d.add_argument("--feed", type=float, default=30.0, help="pen speed mm/s (default 30: slow is more accurate)")
     d.add_argument("--speed", type=float, default=60.0, help="servo speed cap deg/s")
+    d.add_argument("--loops", type=int, default=1, help="times to trace the rectangle (0 = until Ctrl-C / SIGINT)")
     m = sub.add_parser("measure", help="measure a photo of the drawn rectangle")
     m.add_argument("photo")
     m.add_argument("--corners", required=True, help='"x,y x,y x,y x,y": board bottom-left, bottom-right, top-right, top-left')
     m.add_argument("--mask", action="append", default=[], help="x0,y0,x1,y1 (px) box to ignore, e.g. the pen barrel (repeatable)")
-    m.add_argument("--ink", choices=INKS, default="green", help="colour of the pen that drew the rectangle (ballpoint: blue, or dark for black)")
+    m.add_argument("--ink", choices=INKS, default="auto", help="auto reads any pen; name a colour only if the overlay shows auto picking up the wrong things")
     m.add_argument("--update-mesh", action="store_true", help="fold the measured error into calibration.json")
     m.add_argument("--gain", type=float, default=0.8)
     m.add_argument("--overlay", help="write a PNG of the ink against the plan")
     a = ap.parse_args(argv if argv is not None else sys.argv[1:])
     if a.cmd == "draw":
-        draw(a.port, a.feed, a.speed)
+        draw(a.port, a.feed, a.speed, a.loops)
     else:
         run(a.photo, a.corners, a.mask, a.update_mesh, a.gain, a.overlay, a.ink)
 

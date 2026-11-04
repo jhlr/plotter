@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "penarm": {
+      "command": "uv",
+      "args": ["--directory", "server", "run", "penarm-mcp"],
+      "env": { "PENARM_PORT": "${PENARM_PORT:-}" }
+    }
+  }
+}

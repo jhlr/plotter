@@ -2,6 +2,7 @@
 name = "penarm"
 version = "0.1.0"
 description = "MCP server driving a 2-link pen-plotter arm through an ESP32"
+license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.2",

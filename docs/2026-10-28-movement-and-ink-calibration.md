@@ -14,7 +14,7 @@
 - Servo range now 0-180 deg, edge margin 10 mm (`edge_margin_mm`, `edge_margin_right_mm`).
 
 ## Ink calibration (what worked)
-Draw a rectangle, photograph the whole clipboard, rectify with the board corners (230x330), read the ink with a Lab green-channel mask (HSV saturation drops thin strokes), and compare with the plan.
+Draw a rectangle, photograph the whole clipboard, rectify with the board corners (230x330), read the ink in Lab colour (HSV saturation drops thin strokes; the reader is colour-agnostic: ink = clearly different from the paper around it), and compare with the plan.
 - Offsets and gains fit to ink: offset1 -8.09, offset2 134.54, gain1 1.015, gain2 0.813 (error about 4-5 mm rms vs 11 before).
 - The edge error repeats between drawings (bottom edge, two days: correlation 0.94, 1.3 mm rms difference), so a mesh correction is worth keeping and can be iterated: new mesh = old mesh + leftover error.
 - Did not generalise (leave-one-drawing-out): per-servo angle curves, direction-dependent lag, link lengths/base, a smooth residual field from separate drawings, ink dots at fixed poses (ambiguous to match).
