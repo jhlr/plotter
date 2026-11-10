@@ -1,5 +1,7 @@
 // Gear on a base disc, with the motor coupling in the same piece. One print, no assembly.
-bore    = 5.0;    // tunnel through the whole piece (mm) -- ask: add +0.2 clearance when printing
+scale_f = 0.95;   // outer body scaled down 5% (first print did not fit)
+bore_in  = 5.8;   // tunnel diameter at the hub end (top), where the servo shaft enters (mm, final size, not scaled)
+bore_deep = 5.0;  // tunnel diameter at the base end: the bore tightens from bore_in down to this
 teeth   = 16;
 tip_d   = 20;     // gear tip diameter
 root_d  = 17;     // gear root diameter
@@ -20,14 +22,17 @@ module gear2d() {
   }
 }
 
+total_h = scale_f * (base_t + gear_h + flange_t + hub_h);
+function bore_at(z) = bore_deep + (bore_in - bore_deep) * z / total_h;  // linear taper, base -> hub
+
 cut = false;   // true = preview cutaway
 difference() {
-  union() {
+  scale(scale_f) union() {
     cylinder(d = base_d, h = base_t);                                         // base disc
     translate([0,0,base_t]) linear_extrude(gear_h) gear2d();                  // gear fused to floor
     translate([0,0,base_t + gear_h]) cylinder(d = flange_d, h = flange_t);    // flange
     translate([0,0,base_t + gear_h + flange_t]) cylinder(d = hub_d, h = hub_h); // motor hub
   }
-  translate([0,0,-1]) cylinder(d = bore, h = 100, $fn = 64);                  // 5 mm tunnel
+  translate([0,0,-1]) cylinder(d1 = bore_at(-1), d2 = bore_at(total_h + 1), h = total_h + 2, $fn = 64); // tapered tunnel, absolute size
   if (cut) translate([-30,-60,-5]) cube([60,60,40]);
 }
