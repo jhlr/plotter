@@ -20,3 +20,7 @@ Draw a rectangle, photograph the whole clipboard, rectify with the board corners
 - Did not generalise (leave-one-drawing-out): per-servo angle curves, direction-dependent lag, link lengths/base, a smooth residual field from separate drawings, ink dots at fixed poses (ambiguous to match).
 - The first mesh extended a reach-limit saturation (x=215) inward; measure on the rectangle that will be used.
 - Packaged as `penarm-inkcal` (`draw` / `measure`, `penarm/inkcal.py`); see the README for the procedure.
+
+## Update 2026-11-09: simplified for teaching
+
+Removed from the server so a student can read all of it: resume (`journal.py`, `resume_drawing`), the stored-on-board mode (`program.py`, `set_output`, `run_on_board`), portrait canvases (`set_canvas`), text-ops `draw_path`, `move_to`, the camera/vision code, the automatic photo reader and the pose fitter (arm parameters are now set by hand in `calibration.json`), and the Google ADK agent folder. Everything draws through one class, `penarm.Plotter` (`server/src/penarm/plotter.py`); the MCP server only registers its methods. The firmware still understands the EEPROM program commands (`PB/PD/PE/PI/G`), nothing on the host calls them. Old files are in git history.

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import IO, NamedTuple, Protocol
 
 from .errors import Cancelled
-from .program import encode
 
 import serial
 
@@ -34,9 +33,6 @@ class Link(Protocol):
     def set_speed(self, dps: float) -> None: ...
     def read(self) -> tuple[int, int, float, float]: ...
     def set_idle_release(self, seconds: float) -> None: ...
-    def program_capacity(self) -> int: ...
-    def store_program(self, points: list[tuple[float, float]], step_ms: int = 0) -> int: ...
-    def run_program(self, loops: int = 1) -> int: ...
     def abort(self) -> None: ...
     def run_path(
         self, points: list[Waypoint], should_cancel: Callable[[], bool] | None = None,
@@ -265,34 +261,6 @@ class SerialLink:
         except RuntimeError:
             pass
 
-    def program_capacity(self) -> int:
-        """Steps the board can keep in its EEPROM (0 on boards without the feature or with older firmware)."""
-        try:
-            return int(self._cmd("PI").split()[4])
-        except RuntimeError:
-            return 0
-
-    def store_program(self, points: list[tuple[float, float]], step_ms: int = 0) -> int:
-        """Write the drawing into the board's EEPROM (each step takes step_ms) and return its step count. Nothing plays until run_program; a
-        half-written drawing is never played (the board commits it only on the last command)."""
-        start, steps = encode(points)
-        cap = self.program_capacity()
-        if len(steps) > cap:
-            raise ValueError(f"the drawing needs {len(steps)} steps but the board keeps {cap}")
-        if not steps:
-            raise ValueError("the drawing does not move the arm")
-        self._cmd(f"PB {start[0]} {start[1]} {len(steps)} {step_ms}")
-        for i in range(0, len(steps), 8):
-            self._cmd(f"PD {i} " + " ".join(f"{da} {db}" for da, db in steps[i : i + 8]))
-        self._cmd("PE")
-        return len(steps)
-
-    def run_program(self, loops: int = 1) -> int:
-        """Start the stored drawing (0 loops = until abort). The board plays it on its own: the host may disconnect."""
-        reply = self._cmd(f"G {loops}")  # answered at once: the board ramps to the start pose after the reply
-        self.target = None
-        return int(reply.split()[1])
-
 
 class SimLink:
     """Records servo targets so tools run without hardware."""
@@ -301,7 +269,6 @@ class SimLink:
         self.pos = (90.0, 90.0)
         self.history: list[tuple[float, float]] = []
         self.resets = 0
-        self.program: tuple[tuple[int, int], list[tuple[int, int]]] = ((0, 0), [])
 
     def move(self, s1: float, s2: float) -> None:
         self.pos = (s1, s2)
@@ -309,23 +276,6 @@ class SimLink:
 
     def set_speed(self, dps: float) -> None:
         pass
-
-    def program_capacity(self) -> int:
-        return 492
-
-    def store_program(self, points: list[tuple[float, float]], step_ms: int = 0) -> int:
-        start, steps = encode(points)
-        self.program = (start, steps)
-        return len(steps)
-
-    def run_program(self, loops: int = 1) -> int:
-        start, steps = self.program
-        a, b = start
-        for da, db in steps:
-            a, b = a + da, b + db
-        self.pos = (a / 10.0, b / 10.0)
-        self.history.append(self.pos)
-        return len(steps)
 
     def abort(self) -> None:
         pass

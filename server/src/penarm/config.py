@@ -4,35 +4,34 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ArmConfig:
-    # Link lengths, joint axis to joint axis / pen axis (mm), from the CAD in pecas_impressao/*.stl:
-    # shoulder x=20.7 -> elbow x=128.8 -> pencil hole x=243.0 (all on y=8). A ruler gave 105 / 115 on the printed arm.
+    # THE REFERENCE KIT, measured 2026-11-10 from overhead photos at servos 90/90 and 120/60 (+-3 deg, +-5 mm).
+    # Build every new kit at the ASSEMBLY POSE (`penarm-assemble`) and these numbers hold without any photo.
+    # Link lengths (mm): l1 shoulder axis -> elbow axis (CAD 108.1); l2 elbow axis -> pen hole (the ring, ~106 on the print).
     l1: float = 108.1
-    l2: float = 114.2
-    # Shoulder axis position in page coordinates (mm). Page origin = bottom-left corner of the
-    # sheet, x to the right, y away from the arm base. Base sits below the sheet's bottom edge.
-    # Base axis ~1 cm below the sheet, centered (measured roughly). A commanded 60 mm square came out ~50 mm:
-    # pen friction makes the joints lag (the thin end of link 2 bends), so drawings run small and wobbly.
-    # Re-measured from an overhead photo at servos 90/90 (rough, +-5 mm): ~11 cm from the sheet's left edge,
-    # ~2.7 cm below its bottom edge.
-    base_x: float = 110.0
-    base_y: float = -27.0
-    # Page size (mm): 200 x 275 notebook sheet.
-    page_w: float = 200.0
-    page_h: float = 275.0
-    # Servo angle (deg) <-> joint angle (deg): joint = sign * (servo - offset).
-    # Joint 1 is measured from +x axis (page), joint 2 is relative to link 1.
-    # Signs: both servos turn the arm counter-clockwise (seen from above) as the angle grows (tested).
-    # Offsets from a second overhead photo at 90/90: link 1 at 100.4 deg, link 2 at 87.3 deg (joint 2 = -13.1 deg).
-    sign1: float = 1.0
-    offset1: float = -10.4
-    sign2: float = 1.0
-    offset2: float = 103.1
+    l2: float = 106.0
+    # Shoulder axis in page coordinates (mm). Page = the board: origin bottom-left corner, x right, y away from the
+    # servos. The shoulder sits on the board's bottom edge, centred.
+    base_x: float = 116.0
+    base_y: float = 8.0
+    page_w: float = 230.0
+    page_h: float = 330.0
+    # joint = sign * (servo - offset). Joint 1 = link 1 angle from +x; joint 2 = link 2 relative to link 1, always
+    # negative in use: the elbow always bends to the board's left, away from the electronics.
+    # ASSEMBLY POSE: joint 1 = 90 deg (link 1 along the board's centre line, away from the servos), joint 2 = 0
+    # (links aligned) is reached at servos (90.5, 135.0). Mount both horns with the arm straight there.
+    sign1: float = 1.047
+    offset1: float = 4.5
+    sign2: float = 0.877
+    offset2: float = 135.0
     # Usable servo range (deg): the full travel (chosen 2026-10-27 for a larger canvas; an SG90 is less accurate near its end stops).
     servo_min: float = 0.0
     servo_max: float = 180.0
-    elbow_up: bool = True  # which of the two IK solutions to use
-    edge_margin_mm: float = 10.0  # keep the canvas this far inside the page: the calibration is least accurate at its rim
-    edge_margin_right_mm: float = 10.0  # the right rim can need more where the calibrated model drifts off the board
+    # The canvas: the drawing rectangle, as four edge positions in page mm (the same board frame as base_x/base_y).
+    # You place the edges; the code only checks that the whole rectangle is reachable (it does not search for a size).
+    canvas_left_mm: float = 24.0  # the leftmost reachable with the top at 201 (arm fully extended there); more needs the base moved left
+    canvas_bottom_mm: float = 153.0  # our sheet's bottom edge is at y = 111; the drawing starts ~40 mm above it
+    canvas_right_mm: float = 199.0  # our sheet ends ~18 mm short of the board's right edge (230)
+    canvas_top_mm: float = 201.0
     seg_mm: float = 1.0  # Cartesian interpolation step for straight lines
     feed_mm_s: float = 100.0  # pen-tip speed while drawing (mm/s); faster is smoother (slow servos stick in their dead band)
     accel_mm_s2: float = 600.0  # how fast the pen tip may speed up or brake (mm/s^2)
@@ -43,25 +42,3 @@ class ArmConfig:
 
 DEFAULT = ArmConfig()
 
-
-@dataclass(frozen=True)
-class VisionConfig:
-    """Overhead camera: 4 ArUco markers stuck on the page define the pixel -> mm homography."""
-
-    aruco_dict: str = "DICT_4X4_50"
-    marker_size_mm: float = 20.0
-    # marker id -> marker CENTER in page mm. Stick them where the printed sheet says; keep in sync.
-    marker_centers: tuple[tuple[int, float, float], ...] = (
-        (0, 15.0, 15.0),
-        (1, 133.0, 15.0),
-        (2, 133.0, 195.0),
-        (3, 15.0, 195.0),
-    )
-    # Pencil tag (green eraser end by default), OpenCV HSV ranges (H 0-179).
-    hsv_lo: tuple[int, int, int] = (40, 80, 50)
-    hsv_hi: tuple[int, int, int] = (85, 255, 255)
-    min_blob_px: int = 30
-    frames: int = 5  # frames fused (median) per fix
-
-
-VISION = VisionConfig()

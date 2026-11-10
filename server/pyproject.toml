@@ -8,6 +8,7 @@ dependencies = [
     "mcp>=1.2",
     "pyserial>=3.5",
     "svgelements>=1.9.6",
+    "numpy>=2.4.6",
 ]
 
 [dependency-groups]
@@ -15,12 +16,11 @@ dev = ["pytest>=8", "mypy>=1.10", "types-pyserial"]
 
 [project.scripts]
 penarm-mcp = "penarm.server:main"
-penarm-markers = "penarm.vision:markers_main"
 penarm-inkcal = "penarm.inkcal:main"
+penarm-assemble = "penarm.assemble:main"
 
 [project.optional-dependencies]
 vision = [
-    "numpy>=2.4.6",
     "opencv-python-headless>=4.8",
 ]
 

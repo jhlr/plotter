@@ -12,7 +12,7 @@ def ik(cfg: ArmConfig, x: float, y: float) -> tuple[float, float]:
     c2 = (r2 - cfg.l1**2 - cfg.l2**2) / (2 * cfg.l1 * cfg.l2)
     if not -1.0 <= c2 <= 1.0:
         raise Unreachable(f"({x:.1f},{y:.1f}) outside arm reach")
-    t2 = math.acos(c2) * (-1 if cfg.elbow_up else 1)
+    t2 = -math.acos(c2)  # the elbow always bends to the board's left: joint 2 < 0
     t1 = math.atan2(dy, dx) - math.atan2(cfg.l2 * math.sin(t2), cfg.l1 + cfg.l2 * math.cos(t2))
     return math.degrees(t1), math.degrees(t2)
 

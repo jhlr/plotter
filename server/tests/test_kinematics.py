@@ -11,10 +11,9 @@ from penarm.link import SimLink
 CFG = ArmConfig()
 
 
-@pytest.mark.parametrize("elbow_up", [True, False])
 @pytest.mark.parametrize("pt", [(105.0, 100.0), (60.0, 150.0), (140.0, 60.0)])
-def test_ik_fk_roundtrip(pt: tuple[float, float], elbow_up: bool) -> None:
-    cfg = ArmConfig(elbow_up=elbow_up)
+def test_ik_fk_roundtrip(pt: tuple[float, float]) -> None:
+    cfg = ArmConfig()
     x, y = fk(cfg, *ik(cfg, *pt))
     assert math.dist((x, y), pt) < 1e-6
 

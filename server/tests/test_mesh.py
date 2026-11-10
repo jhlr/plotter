@@ -41,7 +41,7 @@ def test_the_arm_aims_against_the_mesh_error() -> None:
     from penarm.link import SerialLink
     from tests.fakes import FakeBoard
 
-    target_page = (100.0, 120.0)  # a page point both arms can reach
+    target_page = (100.0, 175.0)  # a page point inside the default canvas
 
     def landing(mesh: CorrectionMesh | None, name: str) -> tuple[float, float]:
         board = FakeBoard()

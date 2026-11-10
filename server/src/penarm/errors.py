@@ -5,10 +5,6 @@ class Unreachable(ValueError):
     pass
 
 
-class VisionError(RuntimeError):
-    pass
-
-
 class Busy(RuntimeError):
     """A drawing job is already running."""
 

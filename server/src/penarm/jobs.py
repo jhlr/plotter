@@ -64,7 +64,7 @@ class JobRunner:
             job.finished = time.monotonic()
             job._finished_evt.set()
 
-    def wait(self, job: Job, timeout: float) -> bool:
+    def wait(self, job: Job, timeout: float | None) -> bool:
         return job._finished_evt.wait(timeout)
 
     def get(self, job_id: str | None = None) -> Job:

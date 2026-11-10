@@ -86,3 +86,15 @@ def test_colour_hints_read_the_same_rectangle(ink: str, bgr: tuple[int, int, int
 
 def test_green_pen_is_not_read_as_blue_ink() -> None:
     assert len(ink_pixels(_photo(0.0, 0.0), [], "blue")) < 500
+
+
+def test_brown_ink_is_told_apart_from_green_and_paper() -> None:
+    import cv2
+    import numpy as np
+
+    from penarm.inkcal import _is_ink
+
+    bgr = np.array([[[30, 60, 110], [40, 150, 40], [235, 235, 235]]], dtype=np.uint8)  # brown, green, paper
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    assert _is_ink(lab, "brown").tolist() == [[True, False, False]]
+    assert _is_ink(lab, "green").tolist() == [[False, True, False]]

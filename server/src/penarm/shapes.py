@@ -1,5 +1,8 @@
-"""Curve primitives sampled into polylines (max chord error `tol` mm)."""
+"""Geometry: shapes and curves sampled into polylines (mm), SVG path data, bbox and fit."""
 import math
+
+from svgelements import Move
+from svgelements import Path as SvgPath
 
 
 def arc_points(
@@ -135,11 +138,6 @@ def heart_points(cx: float, cy: float, size: float, seg_mm: float = 1.0) -> Stro
     return [(cx + px * k, cy + py * k) for px, py in raw]
 
 
-def quad_points(p0: Point, c: Point, p1: Point, seg_mm: float = 1.0) -> Stroke:
-    """Quadratic Bezier p0 -> p1 with control point c."""
-    return bezier_points(p0, ((p0[0] + 2 * c[0]) / 3, (p0[1] + 2 * c[1]) / 3), ((p1[0] + 2 * c[0]) / 3, (p1[1] + 2 * c[1]) / 3), p1, seg_mm)
-
-
 def transform_strokes(
     strokes: list[Stroke], scale: float = 1.0, rotate_deg: float = 0.0, translate: Point = (0.0, 0.0),
     about: Point = (0.0, 0.0), mirror_x: bool = False, mirror_y: bool = False,
@@ -178,3 +176,36 @@ def fit_strokes(strokes: list[Stroke], x: float, y: float, w: float, h: float, m
     ox = x + margin + (tw - bw * sx) / 2  # centered in the box
     oy = y + margin + (th - bh * sy) / 2
     return [[(ox + (px - x0) * sx, oy + (py - y0) * sy) for px, py in s] for s in strokes]
+
+
+def point(p: list[float], what: str = "point") -> Point:
+    if len(p) != 2:
+        raise ValueError(f"{what} must be [x, y], got {p}")
+    return float(p[0]), float(p[1])
+
+
+def svg_to_strokes(d: str, seg_mm: float = 1.0) -> list[Stroke]:
+    """SVG path data -> strokes, in the path's own units with y DOWN (the caller flips and fits)."""
+    try:
+        path = SvgPath(d)
+    except Exception as exc:  # svgelements raises assorted parse errors
+        raise ValueError(f"invalid SVG path data: {exc}") from exc
+    strokes: list[Stroke] = []
+    cur: Stroke = []
+    for seg in path:
+        if isinstance(seg, Move):
+            if len(cur) > 1:
+                strokes.append(cur)
+            cur = [(float(seg.end.x), float(seg.end.y))]
+            continue
+        length = float(seg.length(error=1e-4))
+        n = max(1, math.ceil(length / seg_mm))
+        pts = [seg.point(i / n) for i in range(1, n + 1)]
+        if not cur and seg.start is not None:
+            cur = [(float(seg.start.x), float(seg.start.y))]
+        cur += [(float(p.x), float(p.y)) for p in pts]
+    if len(cur) > 1:
+        strokes.append(cur)
+    if not strokes:
+        raise ValueError("SVG path has no drawable segments")
+    return strokes

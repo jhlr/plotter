@@ -12,7 +12,6 @@ import signal
 import json
 import sys
 from dataclasses import replace
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -29,7 +28,7 @@ Pts = NDArray[np.float64]
 Rect = tuple[float, float, float, float]  # x0, y0, x1, y1 in page mm
 EDGE_STEP_MM = 6.0
 LAB_L_MAX = 205
-INKS = ("auto", "green", "blue", "red", "dark")  # `auto` = any pen; the others are colour hints for a photo `auto` struggles with
+INKS = ("auto", "green", "blue", "red", "brown", "dark")  # `auto` = any pen; the others are colour hints for a photo `auto` struggles with
 AUTO_DELTA = 20.0  # `auto`: Lab distance from the paper around the pixel above which it is ink (JPEG noise is ~3-5)
 AUTO_SCALE = 8  # the paper colour is estimated on a photo this many times smaller, with a median far wider than a stroke
 AUTO_WINDOW = 51
@@ -69,6 +68,8 @@ def _is_ink(lab: NDArray[np.uint8], ink: str) -> NDArray[np.bool_]:
         return (a < 115) & (light < LAB_L_MAX)  # green ink drops a below ~112
     if ink == "red":
         return (a > 140) & (light < LAB_L_MAX)
+    if ink == "brown":
+        return (a > 133) & (b > 135) & (light < LAB_L_MAX)  # brown: warm, between red (a high) and yellow (b high)
     if ink == "blue":
         return (b < 112) & (light < LAB_L_MAX)
     if ink == "dark":
