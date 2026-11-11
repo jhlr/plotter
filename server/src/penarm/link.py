@@ -10,6 +10,7 @@ from typing import IO, NamedTuple, Protocol
 from .errors import Cancelled
 
 import serial
+from serial.tools.list_ports import comports
 
 try:
     import fcntl
@@ -53,6 +54,14 @@ class SerialLike(Protocol):
     def readline(self) -> bytes: ...
     def reset_input_buffer(self) -> None: ...
     def close(self) -> None: ...
+
+
+def find_port() -> str:
+    """The serial port of the one USB board that is plugged in (Uno clones show up as usbmodem / usbserial / ttyUSB / ttyACM / COM)."""
+    found = sorted(p.device for p in comports() if re.search(r"usb|ACM\d|^COM\d", p.device, re.I))
+    if len(found) != 1:
+        raise RuntimeError(f"expected exactly one USB board, found {len(found)}: {found or 'none'}. Plug one board in, or pass the port by hand.")
+    return found[0]
 
 
 def _acquire_port_lock(port: str) -> IO[str] | None:

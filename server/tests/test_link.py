@@ -91,3 +91,19 @@ def test_idle_release_is_sent_and_tolerated_on_old_firmware() -> None:
         link.set_idle_release(90)  # must not raise
     finally:
         link.close()
+
+
+def test_find_port_wants_exactly_one_usb_board(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from penarm import link
+
+    def boards(*names: str) -> None:
+        monkeypatch.setattr(link, "comports", lambda: [SimpleNamespace(device=n) for n in names])
+
+    boards("/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.usbmodem11201")
+    assert link.find_port() == "/dev/cu.usbmodem11201"
+    for names in ((), ("/dev/cu.usbmodem1", "/dev/cu.usbserial-2")):
+        boards(*names)
+        with pytest.raises(RuntimeError, match="exactly one"):
+            link.find_port()

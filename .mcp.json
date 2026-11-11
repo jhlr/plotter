@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "penarm": {
-      "command": "uv",
-      "args": ["--directory", "server", "run", "penarm-mcp"],
+      "command": "python",
+      "args": ["-c", "from penarm.server import main; main()"],
       "env": { "PENARM_PORT": "${PENARM_PORT:-}" }
     }
   }

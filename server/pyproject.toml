@@ -9,20 +9,17 @@ dependencies = [
     "pyserial>=3.5",
     "svgelements>=1.9.6",
     "numpy>=2.4.6",
+    "opencv-python-headless>=4.8",
 ]
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = ["pytest>=8", "mypy>=1.10", "types-pyserial"]
+deck = ["python-pptx", "pillow"]  # only to rebuild the workshop slides
 
 [project.scripts]
 penarm-mcp = "penarm.server:main"
-penarm-inkcal = "penarm.inkcal:main"
+penarm-calibrate = "penarm.calibrate:main"
 penarm-assemble = "penarm.assemble:main"
-
-[project.optional-dependencies]
-vision = [
-    "opencv-python-headless>=4.8",
-]
 
 [build-system]
 requires = ["hatchling"]

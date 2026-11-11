@@ -15,10 +15,10 @@ A 2-link pen-plotter arm on an Arduino Uno, driven through an MCP server. Read `
 
 ## Procedure
 
-1. **No hardware yet:** `make setup` (uv + tests, 100+ pass), then `make sim`. The server runs a simulator when `PENARM_PORT` is unset or empty. `canvas_info` shows `"simulated": true`.
-2. **Connect yourself to the server.** It is a stdio MCP server: command `uv`, args `["--directory", "<repo>/server", "run", "penarm-mcp"]`, env `PENARM_PORT=<serial port>` (omit for simulator). The repo's `.mcp.json` already does this for Claude Code. The server ships usage instructions: read them, then call `canvas_info`.
+1. **No hardware yet:** `make setup` (venv + tests, 100+ pass), then `make sim`. The server runs a simulator when `PENARM_PORT` is unset or empty. `canvas_info` shows `"simulated": true`.
+2. **Connect yourself to the server.** It is a stdio MCP server: command `<repo>/.venv/bin/penarm-mcp` (no args), env `PENARM_PORT=<serial port>` (omit for simulator). The repo's `.mcp.json` already does this for Claude Code. The server ships usage instructions: read them, then call `canvas_info`.
 3. **Hardware bring-up, in order** (README section 3): servo test (`make servotest PORT=...`; if a servo does not move it is wiring or power, stop and tell the human), flash the main firmware (`make flash PORT=...`, wait for "verified", reflash otherwise), then restart the server with `PENARM_PORT`. Serial port: macOS `ls /dev/cu.usbserial*`, Linux `ls /dev/ttyUSB*`, Windows `COM3`. Opening the port resets the Uno; only one process may hold it.
-4. **Calibrate before drawing**: assemble at the assembly pose (`penarm-assemble`, README section 5; skill `calibrate-angles` only as a fallback), then the movement (the rectangle).  (README sections 5-6). `server/calibration.json` is specific to one arm and git-ignored; without it the defaults describe the author's arm, so drawings come out the wrong size. Set the arm parameters by hand with the pen removed (README section 5), then run the rectangle calibration 2-3 times on fresh sheets (`penarm-inkcal draw`, photo, `measure ... --overlay`, **open the overlay and look**, then `--update-mesh`).
+4. **Calibrate before drawing** (README section 5): assemble at the assembly pose (`penarm-assemble`, no measuring), then ONE rectangle and ONE photo: `penarm-calibrate draw --port P` on a clean sheet, the human photographs the whole board and you read its 4 corners in pixels (crop 2x2 and read by hand), `penarm-calibrate measure photo.jpg --corners "BL BR TR TL" --overlay check.png`, **open the overlay and look**, then `--save`. Draw again to confirm. Without a `~/.penarm/calibration.json` the defaults describe the author's arm.
 5. **Draw:** `canvas_info` first, `dry_run=true` for anything new, a small first drawing well inside the sheet, 30-45 mm/s for long runs.
 
 ## Rules that have cost real time
@@ -27,7 +27,7 @@ A 2-link pen-plotter arm on an Arduino Uno, driven through an MCP server. Read `
 - Do not move the arm with a pen on the desk and an unvalidated mapping (it scratched the table once). Order: no pen, validate mapping, small drawing.
 - Name the board corners in the photo by what they are (BL = nearest the servos, on the left), not by where they land in the image.
 - Never trust an ink measurement you have not looked at: open the `--overlay` PNG. If it picked up the arm or the pen barrel, `--mask x0,y0,x1,y1`; if it misses the line, name the colour with `--ink`.
-- After changing offsets, gains or lengths, delete the `mesh` key in `calibration.json` and re-measure.
+- The servos need external 5 V with the ground shared with the Arduino: from USB alone the board locks up when the arm moves.
 - A background process you start is yours to clean up (`ps aux`, kill). A drawing loop runs on the host; stop it with SIGINT/SIGTERM so the arm parks.
 
 ## Checks before you finish a change to this repo

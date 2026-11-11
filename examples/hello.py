@@ -1,10 +1,4 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["penarm"]
-# [tool.uv.sources]
-# penarm = { path = "../server", editable = true }
-# ///
-"""Draw without any LLM, from any folder:  uv run examples/hello.py
+"""Draw without any LLM, from any folder:  python examples/hello.py
 No port = simulator. For the real arm: Plotter("/dev/cu.usbserial-10")."""
 from penarm import Plotter
 

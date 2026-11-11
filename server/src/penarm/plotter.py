@@ -38,7 +38,7 @@ class Plotter:
         self.port = port or None
         self.link: Link = SerialLink(self.port) if self.port else SimLink()
         self.store = CalibrationStore()
-        self.arm = Arm(self.store.apply(DEFAULT), self.link, self.store.mesh)
+        self.arm = Arm(self.store.apply(DEFAULT), self.link)
         self.jobs = JobRunner()
         self.wait_s = wait_s
 
@@ -59,7 +59,7 @@ class Plotter:
         x right, y up. Every drawing tool takes coordinates in this frame; points outside are rejected. The pencil has
         no pen-up yet, so a drawing is one continuous trace (travel between strokes marks the paper)."""
         c = self.arm.canvas
-        return {"width_mm": round(c.w, 1), "height_mm": round(c.h, 1), "pen_up": False, "calibrated": bool(self.store.mesh), "simulated": self.port is None, "busy": self.busy()}
+        return {"width_mm": round(c.w, 1), "height_mm": round(c.h, 1), "pen_up": False, "calibrated": bool(self.store.params), "simulated": self.port is None, "busy": self.busy()}
 
     @property
     def canvas(self) -> Canvas:

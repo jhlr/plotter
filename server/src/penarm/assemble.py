@@ -1,7 +1,7 @@
 """Assembly pose: send the servos to the angles where the arm must be STRAIGHT (joint 1 = 90 deg, link 1 along the board's
 centre line; joint 2 = 0, links aligned), so each horn is mounted at the position the default calibration assumes.
 
-    uv run penarm-assemble --port /dev/cu.usbserial-XXXX
+    penarm-assemble --port /dev/cu.usbserial-XXXX
 
 Mount the horns with the arm straight, tighten, and nothing else needs calibrating: go straight to the rectangle."""
 import argparse

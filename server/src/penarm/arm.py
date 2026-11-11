@@ -4,7 +4,6 @@ from collections.abc import Callable
 from .canvas import Canvas, safe_canvas
 from .config import ArmConfig
 from .errors import Unreachable
-from .mesh import CorrectionMesh
 from .kinematics import fk, interpolate, joints_to_servos, page_to_servos, servos_to_joints
 from .link import Link, Waypoint
 from .profile import step_times
@@ -16,9 +15,8 @@ XY = tuple[float, float]
 class Arm:
     """Drawing coordinates are CANVAS mm (origin bottom-left of the reachable canvas); page mm stay internal."""
 
-    def __init__(self, cfg: ArmConfig, link: Link, mesh: CorrectionMesh | None = None) -> None:
+    def __init__(self, cfg: ArmConfig, link: Link) -> None:
         self.link = link
-        self.mesh = mesh  # residual position error measured from a drawn rectangle: aim against it
         self.pos: tuple[float, float] | None = None  # last commanded position, PAGE mm
         self.set_config(cfg)
         self._generation = getattr(link, "resets", 0)
@@ -40,7 +38,7 @@ class Arm:
     def set_config(self, cfg: ArmConfig) -> None:
         """Swap geometry/calibration (e.g. after a fit) and recompute the canvas."""
         self.cfg = cfg
-        self.canvas: Canvas = safe_canvas(cfg, mesh=self.mesh)
+        self.canvas: Canvas = safe_canvas(cfg)
 
     def _page_point(self, x: float, y: float) -> tuple[float, float]:
         if not self.canvas.contains(x, y):
@@ -59,13 +57,9 @@ class Arm:
         for s in pages:
             for p in s:
                 for q in interpolate(prev or p, p, self.cfg.seg_mm):
-                    page_to_servos(self.cfg, *self._aim(q))
+                    page_to_servos(self.cfg, *q)
                 prev = p
         return pages
-
-    def _aim(self, q: XY) -> XY:
-        """Where to point the arm so the pen lands on page point q (the model's target shifted against the mesh error)."""
-        return self.mesh.corrected(*q) if self.mesh else q
 
     def _samples(self, pages: list[Stroke], start: XY | None) -> list[XY]:
         """Cartesian samples (page mm) along the strokes, at most seg_mm apart, after travelling from `start`."""
@@ -80,7 +74,7 @@ class Arm:
     def _timed(self, origin: XY, samples: list[XY]) -> list[Waypoint]:
         """Servo targets for the samples, each timed by the speed profile (soft start/stop, braking at corners)."""
         times = step_times([origin, *samples], self.cfg.feed_mm_s, self.cfg.accel_mm_s2, self.cfg.corner_mm_s)
-        return [Waypoint(*page_to_servos(self.cfg, *self._aim(q)), ms=t) for q, t in zip(samples, times, strict=True)]
+        return [Waypoint(*page_to_servos(self.cfg, *q), ms=t) for q, t in zip(samples, times, strict=True)]
 
     def _pos_from_board(self) -> None:
         """After a cancel or a failure the arm is wherever the board says: take it from there, not from the plan."""

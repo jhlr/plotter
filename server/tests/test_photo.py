@@ -2,8 +2,7 @@ import cv2
 import numpy as np
 import pytest
 
-from penarm.calibration import apply_homography, homography
-from penarm.inkcal import _parse_corners, ink_pixels, measure, to_board_mm
+from penarm.photo import _parse_corners, apply_homography, homography, ink_pixels, to_board_mm
 
 CORNERS_PX = [(100.0, 900.0), (650.0, 880.0), (640.0, 100.0), (110.0, 110.0)]  # board BL, BR, TR, TL as photographed
 RECT = (23.0, 163.0, 201.0, 223.0)
@@ -28,22 +27,13 @@ def _photo(top_error: float, right_error: float, colour: tuple[int, int, int] = 
     return img
 
 
-def test_measure_recovers_the_edge_errors_of_a_synthetic_photo() -> None:
+def test_ink_lands_on_the_drawn_rectangle_in_board_mm() -> None:
     ink = to_board_mm(ink_pixels(_photo(top_error=5.0, right_error=-4.0), []), CORNERS_PX, 230.0, 330.0)
-    mesh, stats = measure(ink, RECT, None, gain=1.0)
-    mid = len(mesh.top[1]) // 2
-    assert mesh.top[1][mid] == pytest.approx(5.0, abs=1.0)  # top edge ink is 5 mm above the plan
-    assert mesh.bottom[1][mid] == pytest.approx(0.0, abs=1.0)
-    assert mesh.right[1][len(mesh.right[1]) // 2] == pytest.approx(-4.0, abs=1.0)
-    assert stats["positions_measured"][0] >= 20  # type: ignore[index]
-
-
-def test_a_second_pass_adds_only_the_error_that_is_left() -> None:
-    ink = to_board_mm(ink_pixels(_photo(top_error=5.0, right_error=0.0), []), CORNERS_PX, 230.0, 330.0)
-    first, _ = measure(ink, RECT, None, gain=1.0)
-    same_again, _ = measure(ink, RECT, first, gain=1.0)  # the old mesh already predicts it: the leftover would be added twice
-    mid = len(first.top[1]) // 2
-    assert same_again.top[1][mid] == pytest.approx(2 * first.top[1][mid], abs=1.0)
+    x0, y0, x1, y1 = RECT
+    assert ink[:, 0].min() == pytest.approx(x0, abs=1.5)
+    assert ink[:, 0].max() == pytest.approx(x1 - 4.0, abs=1.5)
+    assert ink[:, 1].min() == pytest.approx(y0, abs=1.5)
+    assert ink[:, 1].max() == pytest.approx(y1 + 5.0, abs=1.5)
 
 
 def test_pen_box_is_ignored() -> None:
@@ -92,7 +82,7 @@ def test_brown_ink_is_told_apart_from_green_and_paper() -> None:
     import cv2
     import numpy as np
 
-    from penarm.inkcal import _is_ink
+    from penarm.photo import _is_ink
 
     bgr = np.array([[[30, 60, 110], [40, 150, 40], [235, 235, 235]]], dtype=np.uint8)  # brown, green, paper
     lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)

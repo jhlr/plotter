@@ -3,6 +3,5 @@
 __pycache__/
 .mypy_cache/
 .pytest_cache/
-calibration.json
 .DS_Store
-server/calibration.json.bak-*
+calibration.json*

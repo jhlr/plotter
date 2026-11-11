@@ -1,0 +1,33 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "penarm": {
+      "type": "local",
+      "command": [
+        "python",
+        "-c",
+        "from penarm.server import main; main()"
+      ],
+      "environment": {
+        "PENARM_PORT": ""
+      },
+      "enabled": true
+    }
+  },
+  "model": "centopeia/Qwen-27B-latest",
+  "provider": {
+    "centopeia": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Centopeia",
+      "options": {
+        "baseURL": "https://centopeia.cesar.org.br/v1",
+        "apiKey": "{env:CENTOPEIA_API_KEY}"
+      },
+      "models": {
+        "Qwen-27B-latest": {
+          "name": "Centopeia Qwen-27B-latest"
+        }
+      }
+    }
+  }
+}

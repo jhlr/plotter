@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from .config import ArmConfig
 from .errors import Unreachable
 from .kinematics import page_to_servos
-from .mesh import CorrectionMesh
 
 
 @dataclass(frozen=True)
@@ -27,7 +26,7 @@ class Canvas:
         return -eps <= x <= self.w + eps and -eps <= y <= self.h + eps
 
 
-def safe_canvas(cfg: ArmConfig, step: float = 2.0, mesh: CorrectionMesh | None = None) -> Canvas:
+def safe_canvas(cfg: ArmConfig, step: float = 2.0) -> Canvas:
     """The canvas set by cfg.canvas_*_mm edges, after checking that every point of the rectangle is reachable."""
     x0, y0, x1, y1 = cfg.canvas_left_mm, cfg.canvas_bottom_mm, cfg.canvas_right_mm, cfg.canvas_top_mm
     if not (0.0 <= x0 < x1 <= cfg.page_w and 0.0 <= y0 < y1 <= cfg.page_h):
@@ -36,7 +35,7 @@ def safe_canvas(cfg: ArmConfig, step: float = 2.0, mesh: CorrectionMesh | None =
         for j in range(math.ceil((y1 - y0) / step) + 1):
             x, y = min(x0 + i * step, x1), min(y0 + j * step, y1)
             try:
-                page_to_servos(cfg, *(mesh.corrected(x, y) if mesh else (x, y)))  # the arm aims where the mesh says
+                page_to_servos(cfg, x, y)
             except Unreachable:
                 raise Unreachable(
                     f"the canvas point ({x:.0f},{y:.0f}) mm is not reachable: move the canvas edges (canvas_left/bottom/right/top_mm "
