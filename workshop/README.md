@@ -1,10 +1,10 @@
 # Workshop kit (1 hour, Portuguese)
 
-Three phases, all on the real arm: **1** by hand in Python (20 min), **2** asking an LLM through MCP (20 min), **3** each group presents (20 min).
+Four phases, all on the real arm: **1** by hand in Python; **2** an LLM with no abstraction (it sends raw servo angles with `examples/raw.py`: no (x, y), no sheet, no limits); **3** an LLM with the abstraction of the MCP tools; **4** the groups debate what they saw. The stages switch with `python fase.py 2` / `python fase.py 3`, which turn the penarm tools off and on in `opencode.json`.
 
 ## Before class (once per arm)
 
-1. Flash the main firmware and check for "verified": `make flash PORT=<port>`.
+1. Flash the main firmware and check for "verified": `make flash PORT=<port>` (macOS/Linux only; on Windows: `pio run -d firmware -e uno -t upload --upload-port COM3`).
 2. Assembly pose: `penarm-assemble --port <port>`, mount both horns straight, tighten.
 3. Draw the rectangle, one photo, measure and fit (README section 5): `penarm-calibrate draw --port <port>`, then `penarm-calibrate measure photo.jpg --corners "..." --overlay check.png`, look, then `--save`. Check with `python examples/phase1.py`.
 4. Per desk: one arm, one USB cable, **external 5 V for the servos**, clean sheets, pencil in the holder.
@@ -23,8 +23,11 @@ Three phases, all on the real arm: **1** by hand in Python (20 min), **2** askin
 
 ## In class
 
-- Phase 1: `python examples/phase1.py` (one board plugged in is found automatically; `python examples/phase1.py sim` uses the simulator).
-- Phase 2: run `opencode` from the repo folder. The committed `opencode.json` (and `.mcp.json` for Claude Code) connects it to the arm; put the desk's serial port in `PENARM_PORT` inside `opencode.json` (empty = simulator).
+- Setup (one prompt, in the folder or not): `opencode`, then paste: `Clone github.com/jhlr/plotter, entre na pasta, leia o AGENTS.md e siga-o.` It ends with a square on the arm.
+- Phase 1, by hand: `python examples/phase1.py` (one board plugged in is found automatically; `sim` uses the simulator). The students write a few lines with the Plotter.
+- Phase 2, LLM with no abstraction: `python fase.py 2` (penarm tools off), restart `opencode` in the repo folder, paste the prompt it prints. The agent only has `examples/raw.py`.
+- Phase 3, LLM with the MCP: `python fase.py 3` (penarm tools on), restart `opencode`, paste the prompt it prints. Keep the arm's port in `PENARM_PORT` in `opencode.json` (`python setup.py` writes it).
+- Phase 4: the groups debate. `python fase.py setup|2|3` writes `AGENTS.md` with the shared rules plus only that stage's section (the source is `workshop/agents.md`: edit that one), so the model sees just what the stage needs. A fresh clone is in the setup stage.
 
 ## The deck
 

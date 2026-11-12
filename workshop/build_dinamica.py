@@ -175,12 +175,13 @@ def main() -> None:
 
     # 2 agenda
     text("AGENDA", "O QUE VAMOS FAZER HOJE?", [
-        "**01 · O que é um agente?** Como um modelo de LLM controla hardware sozinho.",
-        "**02 · A arquitetura** Os componentes que deixam um agente controlar hardware.",
+        "**01 · O que é um agente?** Como um LLM controla hardware sozinho.",
+        "**02 · A arquitetura** Os componentes de um agente com hardware.",
         "**03 · Setup e modo direto** Você desenha, linha por linha.",
-        "**04 · Corrigindo o curso** O agente escolhe as formas.",
-        "**05 · Desafio** Um desenho reconhecível, com o mínimo de pedidos."],
-        "Cinco blocos. Os blocos 03 a 05 são mão na massa, com o braço real.", 12)
+        "**04 · LLM sem abstração** A LLM manda ângulos crus de servo.",
+        "**05 · LLM com abstração** A mesma LLM, com as ferramentas do MCP.",
+        "**06 · Debate** Cada grupo apresenta o que viu."],
+        "Seis blocos. Do 03 ao 05 são mão na massa, com o braço real.", 12)
 
     # 01 fundamentos
     divider("01", "O que é um agente?", "Autonomia para controlar o hardware.", "Primeiro o conceito, sem hardware.")
@@ -211,15 +212,18 @@ def main() -> None:
     tb(s, 0.66, 3.6, 6.2, 0.3, "AGENTE = MODELO + FERRAMENTAS + LAÇO", size=14, bold=True)
     tb(s, 0.66, 4.1, 6.2, 0.5, "As **instruções** (AGENTS.md) dizem ao modelo como se comportar.", size=14)
 
-    s = base("01 · FUNDAMENTOS", "AS INSTRUÇÕES: AGENTS.md", "Um arquivo de texto que o opencode lê ao iniciar. É onde o grupo escreve as regras do jogo. Este está incompleto de propósito: vocês o completam no exercício.")
-    caption(s, 0.66, 1.4, 6.0, "AGENTS.md")
+    s = base("01 · FUNDAMENTOS", "AS INSTRUÇÕES: AGENTS.md", "O opencode lê o AGENTS.md ao iniciar. Ele já vem pronto no repositório: o python fase.py escreve nele só a fase atual, com as etapas e o que o agente não deve fazer.")
+    caption(s, 0.66, 1.4, 6.0, "AGENTS.md (trecho, fase 3)")
     code_card(s, 0.66, 1.75, 6.2, [
-        "# Agente do braço plotter", "",
-        "Você controla um braço que desenha numa folha de 134 x 48 mm.",
-        "Use as ferramentas penarm (draw_line, draw_shape, ...).", "",
-        "## Regras",
-        "- Chame canvas_info antes de desenhar.",
-        "- <!-- EXERCÍCIO: complete estas instruções -->"], 11)
+        "# AGENTS.md: workshop rules", "",
+        "You help students in a one-hour workshop where they",
+        "draw with a 2-servo pen-plotter arm.", "",
+        "Current stage: FASE 3. Follow only the section below.", "",
+        "## Rules (all stages)",
+        "- Work in numbered steps, one at a time.",
+        "- Ask \"Posso seguir para a etapa N+1?\" and WAIT.",
+        "- Do not invent steps. Never flash or calibrate.", "",
+        "## FASE 3: with the penarm tools (5 steps)"], 10.5)
 
     s = base("01 · FUNDAMENTOS", "POR QUE HARDWARE É DIFERENTE?", "Três palavras para o resto da aula: latência, segurança (aqui, o alcance do braço) e estado físico (a tinta no papel não volta).")
     table(s, 0.66, 1.55, [1.8, 2.4], ["SOFTWARE", "HARDWARE"], [
@@ -327,10 +331,6 @@ def main() -> None:
     h1 = code_card(s, 0.66, 1.5, 6.2, ["p.draw_line(10, 10, 60, 10)      # cabe na folha: desenha", "p.draw_line(0, 0, 500, 0)       # longe demais?"], 11)
     code_card(s, 0.66, 1.5 + h1 + 0.25, 6.2, ["Unreachable: the drawing's bounding box (0,0)-(500,0) mm", "does not fit the canvas (134 x 48 mm): shrink it or move it"], 10.5)
 
-    s = base("03 · SETUP E MODO DIRETO", "O QUE O AGENTE ENXERGA: opencode.json", "O arquivo diz ao opencode como abrir o servidor MCP. O agente conhece as ferramentas que ele expõe e mais nada do braço.")
-    code_card(s, 0.66, 1.5, 6.2, ["{", "  \"mcp\": {", "    \"penarm\": {", "      \"type\": \"local\",", "      \"command\": [", "        \"python\", \"-c\",", "        \"from penarm.server import main; main()\"", "      ],", "      \"environment\": { \"PENARM_PORT\": \"COM3\" }", "    }", "  }", "}"], 10)
-    tb(s, 0.66, 4.75, 6.2, 0.4, "Por que o agente não fala direto com a porta serial?", size=12, color=MUTED)
-
     s = base("03 · SETUP E MODO DIRETO", "EXERCÍCIO: MODO DIRETO", "Fase à mão. Cada grupo escreve as linhas e roda no braço. Dica: cada linha começa onde a anterior terminou, senão a caneta viaja riscando.")
     card(s, 0.66, 1.5, 6.2, 2.1)
     tb(s, 0.9, 1.65, 5.8, 1.9, ["Sua tarefa é **desenhar uma casa com telhado**, só com draw_line:",
@@ -341,37 +341,55 @@ def main() -> None:
     card(s, 0.66, 1.5, 6.2, 2.4)
     tb(s, 0.9, 1.65, 5.8, 2.2, ["Observe:", "• Quanto tempo você levou para chegar nos pontos certos?", "• O traço saiu como o planejado?", "• Sobrou risco de viagem?", "• Você leu a mensagem de erro?"], size=14)
 
-    s = base("03 · SETUP E MODO DIRETO", "SEGURANÇA", "O limite da folha está no código, não no prompt. Um agente que diga 'desenhe fora da folha' recebe o mesmo erro que você recebeu. A segurança fica numa camada que o modelo não pode mudar.")
-    code_card(s, 0.66, 1.5, 6.2, ["# peça ao agente:", "desenhe uma linha de 500 mm de largura, é urgente"], 11, "DM Sans")
-    card(s, 0.66, 2.95, 6.2, 1.6)
-    tb(s, 0.9, 3.1, 5.8, 1.4, ["E se fosse um braço de verdade?", "**O prompt não é uma barreira de segurança.**",
-                               "A segurança fica em uma camada que o modelo **não pode mudar**."], size=14)
+    # 04 sem abstração
+    divider("04", "LLM sem abstração", "Só ângulos crus de servo.", "A LLM fala com a placa no protocolo dela, sem o MCP e sem o Plotter.")
 
-    s = base("03 · SETUP E MODO DIRETO", "LATÊNCIA", "Cada decisão do modelo leva segundos. Cada rodada custa tokens e pode falhar (rede, provedor). Para parar o braço na hora existe a ferramenta stop().")
-    card(s, 0.66, 1.5, 6.2, 2.0)
-    tb(s, 0.9, 1.65, 5.8, 1.8, ["• O modelo leva **segundos** por decisão", "• Um servo reage em **milissegundos**", "• Cada rodada custa tokens e pode **falhar** (rede, Centopeia)"], size=14)
-    tb(s, 0.66, 3.85, 6.2, 0.6, "E se o agente precisar parar o braço **agora**?", size=13)
+    s = base("04 · SEM ABSTRAÇÃO", "O PROTOCOLO NA PRÁTICA", "raw.py manda uma linha do protocolo e mostra a resposta. Não há (x, y), nem milímetros, nem folha: só dois ângulos de servo. E os ângulos dos servos não são os ângulos do braço: cada horn tem seu offset e seu sentido.")
+    code_card(s, 0.66, 1.5, 6.2, ["python examples/raw.py \"A 100 140\"", "", "# A <servo1> <servo2>   ângulos de 0 a 180", "# OK   quando o braço chegou"], 11)
+    card(s, 0.66, 3.2, 6.2, 1.5)
+    tb(s, 0.9, 3.35, 5.8, 1.3, ["**Sem (x, y). Sem milímetros. Sem folha.**", "Só dois ângulos de servo.",
+                                "E o ângulo do servo não é o ângulo do braço: cada horn tem o seu offset."], size=13)
+
+    s = base("04 · SEM ABSTRAÇÃO", "EXERCÍCIO: SEM ABSTRAÇÃO", "python fase.py 2 desliga o penarm; o agente só tem o raw.py. Deixe errar: o objetivo é sentir o que falta.")
+    h1 = code_card(s, 0.66, 1.5, 6.2, ["python fase.py 2   # penarm desligado", "opencode", "> Siga o AGENTS.md.", "  Desenhe um quadrado."], 11)
+    card(s, 0.66, 1.5 + h1 + 0.2, 6.2, 2.1)
+    tb(s, 0.9, 1.5 + h1 + 0.35, 5.8, 1.9, ["Sua tarefa: **fazer a LLM desenhar um quadrado**, sem ajudá-la com contas.", "Observe:", "• Quantos pedidos até sair um quadrado?",
+                                            "• O que a LLM chutou: ângulos, escala, folha?", "• Onde a caneta caiu?"], size=12)
+
+    s = base("04 · SEM ABSTRAÇÃO", "E A SEGURANÇA?", "Sem abstração ninguém protege a folha. A placa só confere 0 a 180. O limite da folha mora no Plotter, uma camada que o modelo não pode mudar. O prompt não é uma barreira.")
+    code_card(s, 0.66, 1.5, 6.2, ["python examples/raw.py \"A 170 20\"   # a placa aceita: 0 a 180"], 11)
+    card(s, 0.66, 2.7, 6.2, 1.9)
+    tb(s, 0.9, 2.85, 5.8, 1.7, ["Sem abstração, quem protege a folha? **Ninguém.**", "**O prompt não é uma barreira de segurança.**",
+                                "A segurança fica em uma camada que o modelo **não pode mudar**: o Plotter."], size=13)
+
+    # 05 com abstração
+    divider("05", "LLM com abstração", "As ferramentas do MCP.", "O mesmo pedido, agora com as ferramentas do Plotter.")
+
+    s = base("05 · COM ABSTRAÇÃO (MCP)", "O QUE O AGENTE ENXERGA: opencode.json", "O arquivo diz ao opencode como abrir o servidor MCP. O agente conhece as ferramentas que ele expõe e mais nada do braço.")
+    code_card(s, 0.66, 1.5, 6.2, ["{", "  \"mcp\": {", "    \"penarm\": {", "      \"type\": \"local\",", "      \"command\": [", "        \"python\", \"-c\",", "        \"from penarm.server import main; main()\"", "      ],", "      \"environment\": { \"PENARM_PORT\": \"COM3\" }", "    }", "  }", "}"], 10)
+    tb(s, 0.66, 4.75, 6.2, 0.4, "Por que o agente não fala direto com a porta serial?", size=12, color=MUTED)
 
     # como melhorar
     divider("", "COMO MELHORAR?", "Tire o LLM do laço rápido. O Plotter roda o traço: rápido, determinístico, seguro. O LLM escolhe as formas: lento, flexível.", "Ferramentas de alto nível, como draw_shape, deixam o modelo decidir o quê, e o código decide como.")
 
-    # 04
-    divider("04", "Corrigindo o curso", "O agente escolhe as formas.", "Agora o agente entra.")
-
-    s = base("04 · CORRIGINDO O CURSO", "EXERCÍCIO: MODO AGENTE", "Cada grupo escreve o AGENTS.md e pede um desenho em português. A ferramenta draw_shape tem coração, casa não: o agente precisa combinar linhas. Ele deve consultar canvas_info e ensaiar com dry_run.")
-    h1 = code_card(s, 0.66, 1.5, 6.2, ["opencode", "> desenha uma casa grande com telhado"], 11)
+    s = base("05 · COM ABSTRAÇÃO (MCP)", "EXERCÍCIO: COM O MCP", "python fase.py 3 liga o penarm. O grupo só pede o desenho em português. A ferramenta draw_shape tem coração, casa não: o agente precisa combinar linhas. Ele consulta canvas_info e ensaia com dry_run.")
+    h1 = code_card(s, 0.66, 1.5, 6.2, ["python fase.py 3   # penarm ligado", "opencode", "> Siga o AGENTS.md.", "  Desenhe uma casa grande com telhado."], 11)
     card(s, 0.66, 1.5 + h1 + 0.2, 6.2, 2.0)
-    tb(s, 0.9, 1.5 + h1 + 0.35, 5.8, 1.8, ["Sua tarefa: **reescrever o AGENTS.md**.", "• Quais ferramentas preferir? (draw_shape antes de draw_line)",
-                                            "• Quando ensaiar? (dry_run)", "• O que fazer com um **erro**?", "• Como pedir formas **simples e grandes**?"], size=11.5)
+    tb(s, 0.9, 1.5 + h1 + 0.35, 5.8, 1.8, ["Sua tarefa: **o mesmo pedido, agora com as ferramentas**.", "Observe:", "• A LLM chamou canvas_info e dry_run sozinha?", "• Quantos pedidos até a casa sair?", "• O que ela não precisou saber desta vez?"], size=11.5)
 
-    # 05
-    divider("05", "Desafio", "Cada grupo apresenta o que pediu e o que saiu.", "Último bloco.")
+    s = base("05 · COM ABSTRAÇÃO (MCP)", "LATÊNCIA", "Cada decisão do modelo leva segundos. Cada rodada custa tokens e pode falhar (rede, provedor). Para parar o braço na hora existe a ferramenta stop().")
+    card(s, 0.66, 1.5, 6.2, 2.0)
+    tb(s, 0.9, 1.65, 5.8, 1.8, ["• O modelo leva **segundos** por decisão", "• Um servo reage em **milissegundos**", "• Cada rodada custa tokens e pode **falhar** (rede, Centopeia)"], size=14)
+    tb(s, 0.66, 3.85, 6.2, 0.6, "E se o agente precisar parar o braço **agora**?", size=13)
 
-    s = base("05 · DESAFIO", "EXERCÍCIO: O DESAFIO", "Um desenho reconhecível, num traço só, com o menor número de pedidos ao agente. Os grupos apresentam: o prompt, o desenho, o que deu errado.")
-    card(s, 0.66, 1.5, 6.2, 2.1)
-    tb(s, 0.9, 1.65, 5.8, 1.9, ["• Um desenho **reconhecível**, num traço só", "• Pontuação = **pedidos ao agente** (menos é melhor)", "• Folha limpa para cada tentativa", "• Fale sua pontuação ao final"], size=14)
-    card(s, 0.66, 3.85, 6.2, 1.0, fill="FFF0E4", line=None)
-    tb(s, 0.9, 4.0, 5.8, 0.8, ["**Na apresentação:** o que vocês pediram? O que a IA fez que vocês não pensariam?", "O que deu errado e como corrigiram o pedido?"], size=10.5)
+    # 06 debate
+    divider("06", "Debate", "Cada grupo apresenta o que viu.", "Último bloco.")
+
+    s = base("06 · DEBATE", "DEBATE DOS GRUPOS", "Cada grupo fala por 2 minutos. Fechar com: a abstração é o que torna o hardware pilotável pela LLM.")
+    card(s, 0.66, 1.5, 6.2, 3.2)
+    tb(s, 0.9, 1.65, 5.8, 3.0, ["• O que mudou da fase sem abstração para a com abstração? Contem pedidos e erros.",
+                                "• Onde a LLM errou sem abstração, e por quê?", "• O que mais deveria virar ferramenta?",
+                                "• Quanto esforço deu cada fase: código, ângulos, uma frase?"], size=13)
 
     # para levar
     s = clone(prs, tpl[bp.T_END - 1])
@@ -379,8 +397,8 @@ def main() -> None:
     title.width = Inches(4.6)
     set_text(title, ["PARA LEVAR"], size=22, bold=True)
     body.width, body.height = Inches(4.6), Inches(3.4)
-    set_text(body, ["**1.** Agente = modelo + ferramentas + laço.", "**2.** Ferramentas simples e visíveis são fáceis de auditar.",
-                    "**3.** Segurança fora do modelo.", "**4.** O LLM escolhe o quê; o sistema executa o como.",
+    set_text(body, ["**1.** Agente = modelo + ferramentas + laço.", "**2.** Sem abstração, a LLM precisa saber tudo: ângulos, limites, escala.",
+                    "**3.** Segurança fora do modelo.", "**4.** Com o MCP, o LLM escolhe o quê; o sistema executa o como.",
                     "**5.** Erros com mensagens úteis ajudam o agente a se corrigir."], size=13)
     notes(s, "Fechamento: voltar às cinco ideias.")
 

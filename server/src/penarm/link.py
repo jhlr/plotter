@@ -187,6 +187,11 @@ class SerialLink:
             self._probe()
         return reply
 
+    def raw(self, line: str, wait: float = 6.0) -> str:
+        """Send one protocol line as written (for example "A 100 140") and return the board's reply, with no kinematics,
+        no canvas and no limits other than the firmware's. Used to teach what the abstractions on top are for."""
+        return self._cmd(line, wait=wait, retry_probe=False)
+
     def move(self, s1: float, s2: float) -> None:
         # "OK" only comes on arrival: wait for the ramp (unknown start = worst case) plus a margin
         travel = max(abs(s1 - self.target[0]), abs(s2 - self.target[1])) if self.target else 180.0

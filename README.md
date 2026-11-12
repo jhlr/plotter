@@ -6,15 +6,18 @@ A 2-link planar arm (two SG90 servos, 3D-printed parts, an Arduino Uno) that dra
 
 The arm has **no pen lift**: travel moves mark the paper, so each drawing starts on a clean sheet and is one continuous trace.
 
-> **Handing this repo to an AI agent?** Point it at [`AGENTS.md`](AGENTS.md): it is the step-by-step runbook an agent can follow, and says which steps need a human (wiring, flashing, swapping the sheet, taking the calibration photo).
+> **Handing this repo to an AI agent?** For the **workshop**, [`AGENTS.md`](AGENTS.md) holds the rules and the current stage (SETUP, FASE 2 no abstraction, FASE 3 with MCP); `python fase.py setup|2|3` switches it, from `workshop/agents.md`. For **flashing and calibrating**, [`docs/runbook-hardware.md`](docs/runbook-hardware.md) is the step-by-step runbook, and says which steps need a human (wiring, flashing, swapping the sheet, taking the calibration photo).
 
 ## 0. Try it in 2 minutes, no hardware
 
 You need Python >= 3.11. Everything lives in one virtual environment, `.venv/`, at the repo root. The simulator is built in; it draws nothing physical but runs every tool.
 
     git clone https://github.com/jhlr/plotter && cd plotter
-    make setup                      # creates .venv, installs penarm, runs the tests
+    python setup.py                 # any OS (Windows: py setup.py): creates .venv, installs penarm, finds the board's USB port, checks the simulator
     source .venv/bin/activate       # Windows: .venv\Scripts\activate; after this `python` and `penarm-*` use the venv
+    make setup                      # optional, macOS/Linux: the same plus the full test suite
+
+> **`make` is for macOS and Linux only.** Windows has no `make`: use `py setup.py`, activate with `.venv\Scripts\activate`, and run the commands directly (`penarm-mcp` instead of `make sim`, `pytest` from `server/` instead of `make check`, and for flashing `pio run -d firmware -e uno -t upload --upload-port COM3`).
 
 Then connect your agent. The server is a plain **stdio MCP server**, so every client needs the same three things:
 
@@ -25,6 +28,7 @@ Then connect your agent. The server is a plain **stdio MCP server**, so every cl
 | env | `PENARM_PORT=<serial port>` for the real arm, **leave it unset for the simulator** |
 
 - **Claude Code**, from inside the cloned repo: it picks up the committed [`.mcp.json`](.mcp.json) on its own (approve it when asked). Or add it anywhere with `claude mcp add penarm -e PENARM_PORT=/dev/cu.usbserial-XXXX -- /ABSOLUTE/PATH/plotter/.venv/bin/penarm-mcp` (drop `-e ...` for the simulator, add `-s user` for every project).
+- **opencode**, from inside the repo with `.venv` active: it reads the committed [`opencode.json`](opencode.json) (the server and the workshop's model provider). `python setup.py` writes the board's port into it.
 - **Claude Desktop** and most other clients (Cursor, Windsurf, Cline, ...) use the same JSON shape in their MCP settings file (Claude Desktop: Settings -> Developer -> Edit Config):
 
         {
@@ -38,7 +42,7 @@ Then connect your agent. The server is a plain **stdio MCP server**, so every cl
 
   Use the full path to the venv's `penarm-mcp`, so the app needs no PATH. Restart the client after editing.
 - **Your own agent or script**: any MCP SDK client works (`StdioServerParameters(command=".venv/bin/penarm-mcp")`).
-- **Without a client**: `make sim`, or `PENARM_PORT=... penarm-mcp`.
+- **Without a client**: `penarm-mcp` (simulator), or `PENARM_PORT=... penarm-mcp` for the real arm. `make sim` does the first one on macOS/Linux.
 - **No LLM at all, plain Python**: the MCP tools are just the methods of one class, `Plotter`. See `examples/hello.py` (or `examples/phase1.py`, which finds the board's port by itself with `find_port()`):
 
         from penarm import Plotter
@@ -96,7 +100,7 @@ Wait for **"verified"** at the end. A flash whose verify step fails (`avr_read()
 
 **3.3 Run the tests (no hardware needed).**
 
-    make setup          # python -m venv .venv, pip install -e server[dev], pytest; all pass
+    make setup          # macOS/Linux. python -m venv .venv, pip install -e server[dev], pytest; all pass. On Windows: py setup.py, then pytest in server/
 
 **3.4 Find the serial port:** macOS `ls /dev/cu.usbserial*`, Linux `ls /dev/ttyUSB*`, Windows Device Manager (`COM3`). Opening the port resets the Uno (DTR): the first command takes ~2 s and any drawing stored on the board stops. Only one process may hold the port; the server takes a lock.
 

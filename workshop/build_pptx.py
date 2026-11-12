@@ -283,10 +283,11 @@ def main() -> None:
                            "**Círculo azul:** o alcance máximo, 214 mm."], "sheet",
                 "Todos os desenhos usam essas coordenadas. p.canvas.w e p.canvas.h dão o tamanho na hora.", 13)
     # 7-8 dynamics and rules
-    text_slide("A OFICINA EM 3 FASES", ["**1 · Na mão (20 min):** cada grupo escreve o código e o braço desenha.",
-                                       "**2 · Com a LLM (20 min):** o mesmo grupo pede o desenho em português, no mesmo braço.",
-                                       "**3 · Apresentação (20 min):** cada grupo mostra um desenho e conta como chegou nele."],
-               "Uma hora, com o braço real desde o início. Todos os braços já estão calibrados.")
+    text_slide("A OFICINA EM 4 FASES", ["**1 · Na mão:** cada grupo escreve o código e o braço desenha.",
+                                       "**2 · LLM sem abstração:** a LLM só manda ângulos crus de servo.",
+                                       "**3 · LLM com abstração:** a mesma LLM, agora com as ferramentas do MCP.",
+                                       "**4 · Debate:** os grupos comparam o que viram."],
+               "Quatro fases, com o braço real desde o início. Todos os braços já estão calibrados. As fases 2 e 3 usam o mesmo pedido, para comparar.", 14)
     text_slide("REGRAS DO JOGO", ["**Um traço só:** o braço não levanta a caneta; toda viagem entre formas marca o papel.",
                                  "**Sempre ensaie:** dry_run=True mostra tamanho, tempo e um desenho em ASCII antes de mexer o braço.",
                                  "**Formas simples e grandes:** o braço não tem resolução para detalhes. Poucos cantos, 30 mm ou mais.",
@@ -320,28 +321,48 @@ def main() -> None:
     r.font.color.rgb = RGBColor.from_string(CREAM)
     image_slide("SAIU ISTO", ["Zigue-zague, depois a linha de ligação até o círculo: o braço não levantou a caneta."], "reveal",
                 "Resultado calculado a partir dos pontos reais.", 15)
-    # phase 2
-    image_slide("FASE 2: COM A LLM", ["**“Desenha uma casa grande com telhado.”**", "**Ideias simples:** um coração, uma casa, um sol (círculo com raios), uma seta.",
+    # phase 2: no abstraction
+    s, panel = image_slide("FASE 2: SEM ABSTRAÇÃO", ["A LLM só tem o protocolo da placa: ângulos de servo.", "Ela chuta, você olha o que saiu."], None,
+                           "A LLM roda raw.py e manda ângulos de servo. Não há (x, y), nem folha, nem limites. Ela precisa descobrir sozinha onde a caneta cai. Deixar errar: é o ponto da fase.", 15,
+                           code_lines=["python fase.py 2", "opencode", "> Siga o AGENTS.md.", "  Desenhe um quadrado."])
+    tb = s.shapes.add_textbox(Inches(5.6), Inches(0.8), Inches(4.0), Inches(4.0))
+    tf = tb.text_frame
+    tf.word_wrap = True
+    for i, line in enumerate(["OBSERVE", "1. Quantos pedidos até sair um quadrado?", "2. A LLM sabia onde estava a folha?", "3. O que faltou: escala, limites, cinemática?"]):
+        par = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        r = par.add_run()
+        r.text = line
+        r.font.name = "DM Sans ExtraBold" if i == 0 else FONT
+        r.font.bold = i == 0
+        r.font.size = Pt(26 if i == 0 else 17)
+        r.font.color.rgb = RGBColor.from_string(CREAM)
+        par.space_after = Pt(12)
+    # phase 3: MCP
+    image_slide("FASE 3: COM O MCP", ["Rode **python fase.py 3** e reabra o opencode.", "**“Desenha uma casa grande com telhado.”**", "**Ideias simples:** um coração, uma casa, um sol (círculo com raios), uma seta.",
                                      "Saiu torto? Peça ajuste: “maior”, “mais para a esquerda”."], "house",
-                "A LLM escolhe as formas, o tamanho e a posição.", 14)
+                "Mesmo pedido da fase 2, agora com as ferramentas do Plotter: a LLM descobre o tamanho da folha (canvas_info), ensaia (dry_run) e só então desenha.", 14)
     s = clone(prs, tpl[T_TEXT - 1])
     _, t, b, _logo = list(s.shapes)
     t.width = Inches(6.6)
-    set_text(t, ["O MESMO DESENHO, DOIS CAMINHOS"], size=22, bold=True)
-    t.top = Inches(0.7)
-    caption(s, 0.66, 1.6, 6.5, "Fase 1: você escolhe cada número")
-    h1 = code_card(s, 0.66, 1.98, 6.4, ["p.draw_line(10, 10, 25, 40); p.draw_line(25, 40, 40, 10)", "p.draw_shape(\"triangle\", cx=100, cy=24, size=36)"], 11)
-    y2 = 1.98 + h1 + 0.2
-    caption(s, 0.66, y2, 6.5, "Fase 2: você descreve a ideia")
-    h2 = code_card(s, 0.66, y2 + 0.38, 6.4, ["“Um zigue-zague e um triângulo grande ao lado. Ensaie antes.”"], 12, "DM Sans")
-    b.top, b.width, b.height = Inches(y2 + 0.38 + h2 + 0.15), Inches(6.4), Inches(0.8)
-    set_text(b, ["O passo criativo mudou de mãos. O braço, o papel e as regras são os mesmos."], size=14)
-    notes(s, "Contar linhas e números escolhidos na fase 1 e comparar com a fase 2.")
-    # phase 3
-    text_slide("CADA GRUPO APRESENTA", ["**O que vocês pediram?** Mostrem o prompt e o desenho que saiu no braço.",
-                                       "**O que a LLM fez que vocês não pensariam?** Uma forma, uma posição, uma ideia.",
-                                       "**O que deu errado?** E como vocês corrigiram o pedido."],
-               "Pedir que a turma compare o esforço da fase 1 (código) com o da fase 2 (um pedido).")
+    set_text(t, ["O MESMO DESENHO, TRÊS CAMINHOS"], size=22, bold=True)
+    t.top = Inches(0.45)
+    caption(s, 0.66, 1.3, 6.5, "Fase 1: você escolhe cada número")
+    h1 = code_card(s, 0.66, 1.62, 6.4, ["p.draw_line(10, 10, 25, 40); p.draw_line(25, 40, 40, 10)", "p.draw_shape(\"triangle\", cx=100, cy=24, size=36)"], 10.5)
+    y2 = 1.62 + h1 + 0.12
+    caption(s, 0.66, y2, 6.5, "Fase 2: a LLM escolhe ângulos crus")
+    h2 = code_card(s, 0.66, y2 + 0.34, 6.4, ["python examples/raw.py \"A 100 140\" \"A 98 120\""], 10.5)
+    y3 = y2 + 0.34 + h2 + 0.12
+    caption(s, 0.66, y3, 6.5, "Fase 3: você descreve a ideia")
+    h3 = code_card(s, 0.66, y3 + 0.34, 6.4, ["“Um zigue-zague e um triângulo grande ao lado. Ensaie antes.”"], 10.5, "DM Sans")
+    b.top, b.width, b.height = Inches(y3 + 0.34 + h3 + 0.12), Inches(6.4), Inches(0.6)
+    set_text(b, ["A abstração mudou o que a LLM precisa saber."], size=13)
+    notes(s, "Contar linhas e números escolhidos nas fases 1 e 2 e comparar com o pedido da fase 3.")
+    # phase 4: debate
+    text_slide("FASE 4: DEBATE", ["**O que mudou da fase 2 para a 3?** Contem os pedidos e os erros de cada uma.",
+                                 "**Onde a LLM errou sem abstração, e por quê?**",
+                                 "**O que mais deveria virar ferramenta?** Pensem em algo que vocês tiveram que explicar.",
+                                 "**Quanto esforço deu cada fase?** Código, ângulos, uma frase."],
+               "Cada grupo fala por 2 minutos. Fechar com: a abstração é o que torna o hardware pilotável pela LLM.", 14)
     # close
     s = clone(prs, tpl[T_END - 1])
     _, body, title, _logo = list(s.shapes)
@@ -349,10 +370,10 @@ def main() -> None:
     set_text(title, ["O QUE O BRAÇO MOSTROU"], size=22, bold=True)
     body.width = Inches(4.6)
     body.height = Inches(3.2)
-    set_text(body, ["**1.** O código é a interface: a LLM chama as mesmas funções que você chamou.",
-                    "**2.** A parte criativa, o que desenhar e em quais números, é o que a LLM assume.",
+    set_text(body, ["**1.** Sem abstração, a LLM precisa saber tudo: ângulos, limites, escala.",
+                    "**2.** Com o MCP, ela só descreve a ideia: o código cuida do como.",
                     "**3.** No mundo físico, regras contam: alcance, papel, uma caneta que não levanta."], size=14)
-    notes(s, "Fechamento. Voltar às duas portas: o mesmo Plotter, dois jeitos de chamar.")
+    notes(s, "Fechamento. Voltar às quatro fases: na mão, sem abstração, com abstração, e o que aprendemos.")
 
     ids = prs.slides._sldIdLst
     for sld in list(ids)[:TEMPLATE_SLIDES]:
