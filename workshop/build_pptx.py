@@ -158,7 +158,33 @@ def notes(slide, text: str) -> None:  # type: ignore[no-untyped-def]
     slide.notes_slide.notes_text_frame.text = text
 
 
-CODE_FONT = "Courier New"
+FONT = "Arial"  # the template's DM Sans is embedded only for Google Slides; elsewhere it falls back to a serif, so use a font every machine has
+CODE_FONT = "Consolas"
+
+
+def apply_font(prs) -> None:  # type: ignore[no-untyped-def]
+    """Put every text run in FONT (bold where the template used a Black/ExtraBold cut), keeping the code font as is."""
+    def runs(shapes):  # type: ignore[no-untyped-def]
+        for sh in shapes:
+            if sh.shape_type == 6:
+                yield from runs(sh.shapes)
+            if getattr(sh, "has_text_frame", False) and sh.has_text_frame:
+                for p in sh.text_frame.paragraphs:
+                    yield from p.runs
+            if getattr(sh, "has_table", False) and sh.has_table:
+                for row in sh.table.rows:
+                    for cell in row.cells:
+                        for p in cell.text_frame.paragraphs:
+                            yield from p.runs
+
+    for slide in prs.slides:
+        for r in runs(slide.shapes):
+            if r.font.name == CODE_FONT or r.font.name in ("Courier New", "Courier"):
+                r.font.name = CODE_FONT
+                continue
+            if r.font.name and ("Black" in r.font.name or "ExtraBold" in r.font.name):
+                r.font.bold = True
+            r.font.name = FONT
 CODE_BG, CODE_FG = "24121B", "FFF6EE"
 
 
@@ -277,7 +303,7 @@ def main() -> None:
         p = set_text_new.paragraphs[0] if i == 0 else set_text_new.add_paragraph()
         r = p.add_run()
         r.text = line
-        r.font.name = "DM Sans ExtraBold" if i == 0 else "DM Sans"
+        r.font.name = "DM Sans ExtraBold" if i == 0 else FONT
         r.font.bold = i == 0
         r.font.size = Pt(26 if i == 0 else 18)
         r.font.color.rgb = RGBColor.from_string(CREAM)
@@ -332,6 +358,7 @@ def main() -> None:
     for sld in list(ids)[:TEMPLATE_SLIDES]:
         prs.part.drop_rel(sld.rId)
         ids.remove(sld)
+    apply_font(prs)
     prs.save(str(OUT))
     print("wrote", OUT, len(prs.slides), "slides")
 

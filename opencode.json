@@ -21,7 +21,7 @@
       "name": "Centopeia",
       "options": {
         "baseURL": "https://centopeia.cesar.org.br/v1",
-        "apiKey": "{env:CENTOPEIA_API_KEY}"
+        "apiKey": "sk-zzqlZhaqFGCQVIm3wBhskg"
       },
       "models": {
         "Qwen-27B-latest": {
