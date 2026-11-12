@@ -13,7 +13,7 @@ Coordinates are canvas mm. The pen has no lift: a drawing is one continuous trac
 from collections.abc import Callable
 
 from .arm import Arm
-from .canvas import Canvas
+from .canvas import Canvas, safe_canvas
 from .calibration import CalibrationStore
 from .config import DEFAULT
 from .errors import Unreachable
@@ -34,17 +34,32 @@ class Plotter:
     """`port=None` is the simulator. `wait_s` is how long a drawing call blocks before handing back a job id to poll
     (None = until it is done, the right choice for scripts; the MCP server uses a short wait so the LLM can poll)."""
 
-    def __init__(self, port: str | None = None, wait_s: float | None = None) -> None:
+    def __init__(self, port: str | None = None, wait_s: float | None = None, lazy: bool = False) -> None:
         self.port = port or None
-        self.link: Link = SerialLink(self.port) if self.port else SimLink()
         self.store = CalibrationStore()
-        self.arm = Arm(self.store.apply(DEFAULT), self.link)
+        self._cfg = self.store.apply(DEFAULT)
+        self._arm: Arm | None = None
         self.jobs = JobRunner()
         self.wait_s = wait_s
+        if not (lazy and self.port):
+            self.arm  # open the board now, so a script fails at once if the port is busy
+
+    @property
+    def arm(self) -> Arm:
+        """The arm, with its link to the board. With `lazy=True` the serial port is opened by the first call that needs the
+        arm (not at construction), so a long-running server leaves the port free until it is really used."""
+        if self._arm is None:
+            link: Link = SerialLink(self.port) if self.port else SimLink()
+            self._arm = Arm(self._cfg, link)
+        return self._arm
+
+    @property
+    def link(self) -> Link:
+        return self.arm.link
 
     def close(self) -> None:
-        if isinstance(self.link, SerialLink):
-            self.link.close()
+        if self._arm is not None and isinstance(self._arm.link, SerialLink):
+            self._arm.link.close()
 
     def __enter__(self) -> "Plotter":
         return self
@@ -58,13 +73,13 @@ class Plotter:
         """START HERE. The drawing canvas: a rectangle the arm can fully reach, in mm, origin at its bottom-left corner,
         x right, y up. Every drawing tool takes coordinates in this frame; points outside are rejected. The pencil has
         no pen-up yet, so a drawing is one continuous trace (travel between strokes marks the paper)."""
-        c = self.arm.canvas
+        c = self.canvas
         return {"width_mm": round(c.w, 1), "height_mm": round(c.h, 1), "pen_up": False, "calibrated": bool(self.store.params), "simulated": self.port is None, "busy": self.busy()}
 
     @property
     def canvas(self) -> Canvas:
-        """The same canvas as canvas_info, as an object: `p.canvas.w`, `p.canvas.h` (mm)."""
-        return self.arm.canvas
+        """The same canvas as canvas_info, as an object: `p.canvas.w`, `p.canvas.h` (mm). Needs no board."""
+        return self._arm.canvas if self._arm is not None else safe_canvas(self._cfg)
 
     def busy(self) -> bool:
         try:
@@ -175,8 +190,8 @@ class Plotter:
     def stop(self) -> dict[str, object]:
         """Emergency stop: cancel the running drawing job or the drawing playing on the board; the arm halts and stays where it is."""
         job = self.jobs.stop()
-        if job is None:
-            self.arm.stop()  # nothing live is running: a stored drawing may be (X on the board is harmless otherwise)
+        if job is None and self._arm is not None:
+            self._arm.stop()  # nothing live is running: a stored drawing may be (X on the board is harmless otherwise)
         return job.summary() if job else {"status": "idle"}
 
     def get_state(self) -> dict[str, object]:

@@ -3,6 +3,7 @@
 Creates .venv, installs penarm, finds the arm's USB port and writes it into opencode.json,
 then runs a simulator check. Plain standard library: it runs before anything is installed."""
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -62,10 +63,14 @@ def main() -> int:
 
     print("pio (flashing):", "found" if shutil.which("pio") or shutil.which("platformio") else "NOT on PATH (only needed to flash a board)")
 
-    activate = r".venv\Scripts\activate" if sys.platform == "win32" else "source .venv/bin/activate"
-    print(f"\nDone. Each new terminal:  {activate}")
-    print("  python examples/phase1.py     # phase 1, by hand")
-    print("  opencode                      # phase 2, with the LLM" if shutil.which("opencode") else "  opencode is NOT installed yet: https://opencode.ai")
+    calib = Path(os.environ.get("PENARM_CALIBRATION") or Path.home() / ".penarm" / "calibration.json")
+    if not calib.exists():
+        print(f"\nWARNING: {calib} not found. This computer would drive the arm with the reference kit's numbers, which are wrong for yours.")
+        print("Copy the calibration file of the arm connected to this computer there (see workshop/README.md), or calibrate it.")
+    print("\nDone. The agent needs no activation (AGENTS.md runs .venv's own Python). For your own terminal, to run examples by hand:")
+    print("  macOS/Linux: source .venv/bin/activate     Windows: .venv\\Scripts\\activate")
+    print("  then: python examples/phase1.py")
+    print("  and in the plotter folder: opencode" if shutil.which("opencode") else "  opencode is NOT installed yet: https://opencode.ai")
     return 0
 
 

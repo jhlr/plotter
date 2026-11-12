@@ -1,30 +1,18 @@
-"""Workshop phase 1, by hand:  python examples/phase1.py   (one USB board plugged in = the real arm;
-`python examples/phase1.py sim` = simulator).
+"""Fase 1, na mão:  python examples/phase1.py     (add `sim` para o simulador, sem o braço)
 
-Four tools, from the simplest to the richest (more line drawings: examples/linhas.py). Change the numbers, run again.
-Coordinates are mm: x to the right, y up, (0, 0) at the bottom-left of the usable paper."""
+Edite este arquivo e rode de novo. Toda coordenada é em mm: x para a direita, y para cima, (0, 0) no canto de baixo à esquerda da folha."""
 import sys
 
 from penarm import Plotter, find_port
 
 port = None if "sim" in sys.argv[1:] else find_port()
-with Plotter(port) as p:
-    print(f"canvas: {p.canvas.w:.0f} x {p.canvas.h:.0f} mm")
+with Plotter(port) as p:                      # p é o braço
+    w, h = p.canvas.w, p.canvas.h             # tamanho da folha: x vai de 0 a w, y de 0 a h
+    print(f"folha: {w:.0f} x {h:.0f} mm")
+    x, y, lado = w / 2 - 15, h / 2 - 15, 30   # canto de baixo à esquerda de um quadrado de 30 mm, no meio da folha
 
-    # 0. Rehearse: dry_run=True moves nothing and prints a preview. Do this before every new drawing.
-    print(p.draw_line(10, 10, 60, 10, dry_run=True)["ascii"])
+    print(p.draw_line(x, y, x + lado, y, dry_run=True)["ascii"])   # ensaio: mostra o desenho e não move nada
+    p.draw_line(x, y, x + lado, y)                                 # o lado de baixo
 
-    # 1. One straight line: from (x1, y1) to (x2, y2).
-    p.draw_line(10, 10, 60, 10)
-
-    # 2. Several lines, one after the other: each starts where the last one ended, so the pen never travels. A rectangle:
-    p.draw_line(10, 10, 60, 10)
-    p.draw_line(60, 10, 60, 40)
-    p.draw_line(60, 40, 10, 40)
-    p.draw_line(10, 40, 10, 10)
-
-    # 3. A circular arc: centre, radius, start and end angle in degrees.
-    p.draw_arc(100, 24, 20, 0, 180)                                            # a half circle
-
-    # 4. A ready-made shape: kind, centre, size. Try "star", "heart", "spiral", "circle", "triangle".
-    p.draw_shape("star", 100, 24, 30, sides=7)
+    # SUA VEZ: complete o quadrado com mais 3 draw_line.
+    # O braço não levanta a caneta: cada linha começa onde a anterior terminou.

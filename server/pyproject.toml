@@ -9,11 +9,11 @@ dependencies = [
     "pyserial>=3.5",
     "svgelements>=1.9.6",
     "numpy>=2.4.6",
-    "opencv-python-headless>=4.8",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "mypy>=1.10", "types-pyserial"]
+calibrate = ["opencv-python-headless>=4.8"]  # only to calibrate an arm from a photo (penarm-calibrate)
+dev = ["pytest>=8", "mypy>=1.10", "types-pyserial", "opencv-python-headless>=4.8"]
 deck = ["python-pptx", "pillow"]  # only to rebuild the workshop slides
 
 [project.scripts]

@@ -13,7 +13,10 @@ import argparse
 import shutil
 from dataclasses import replace
 
-import cv2
+try:
+    import cv2
+except ModuleNotFoundError:
+    raise SystemExit("penarm-calibrate needs OpenCV: pip install -e 'server[calibrate]'") from None
 import numpy as np
 
 from .calibration import CalibrationStore

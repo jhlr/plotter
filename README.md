@@ -13,7 +13,7 @@ The arm has **no pen lift**: travel moves mark the paper, so each drawing starts
 You need Python >= 3.11. Everything lives in one virtual environment, `.venv/`, at the repo root. The simulator is built in; it draws nothing physical but runs every tool.
 
     git clone https://github.com/jhlr/plotter && cd plotter
-    python setup.py                 # any OS (Windows: py setup.py): creates .venv, installs penarm, finds the board's USB port, checks the simulator
+    python3 setup.py                # any OS (Windows: py setup.py): creates .venv, installs penarm, finds the board's USB port, checks the simulator
     source .venv/bin/activate       # Windows: .venv\Scripts\activate; after this `python` and `penarm-*` use the venv
     make setup                      # optional, macOS/Linux: the same plus the full test suite
 
@@ -125,7 +125,7 @@ A ballpoint needs more downward force than a felt-tip, which adds friction and m
     cd server
     penarm-assemble --port /dev/cu.usbserial-XXXX
 
-**Step 2, draw.** Pen in, **clean sheet**:
+**Step 2, draw.** Pen in, **clean sheet**. Calibration needs OpenCV, which the base install leaves out: `pip install -e "server[calibrate]"`.
 
     penarm-calibrate draw --port /dev/cu.usbserial-XXXX
 

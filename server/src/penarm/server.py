@@ -41,7 +41,7 @@ A two-servo pen-plotter arm. Provider-neutral usage guide:
 6. Points are plain [x, y] arrays; optional arguments use defaults (0, empty list, empty string), never null.
 """
 
-plotter = Plotter(os.environ.get("PENARM_PORT") or None, wait_s=float(os.environ.get("PENARM_SYNC_WAIT", "20")))
+plotter = Plotter(os.environ.get("PENARM_PORT") or None, wait_s=float(os.environ.get("PENARM_SYNC_WAIT", "20")), lazy=True)  # the port opens on the first drawing call, not at start-up
 mcp = MCPServer("penarm", instructions=GUIDE)
 
 TOOLS = ("canvas_info", "draw_svg_path", "draw_shape", "draw_polyline", "draw_line",

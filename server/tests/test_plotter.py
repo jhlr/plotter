@@ -48,3 +48,11 @@ def test_a_horn_mounted_for_the_wrong_elbow_side_says_so(tmp_path: Path, monkeyp
     monkeypatch.setenv("PENARM_CALIBRATION", str(path))
     with pytest.raises(Unreachable, match="remount"):
         Plotter()
+
+
+def test_lazy_plotter_leaves_the_serial_port_alone_until_it_is_needed() -> None:
+    p = Plotter("/dev/this-port-does-not-exist", lazy=True)  # a script would fail here; the MCP server must not
+    assert p.canvas_info()["width_mm"] and p.canvas.w > 0 and p.busy() is False
+    assert p.stop() == {"status": "idle"}  # nothing was opened, so there is nothing to stop
+    with pytest.raises(Exception):
+        p.get_state()  # the first call that needs the arm opens the port, and only now does it fail
