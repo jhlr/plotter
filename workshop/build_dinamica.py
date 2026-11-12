@@ -168,9 +168,9 @@ def main() -> None:
     s = clone(prs, tpl[bp.T_COVER - 1])
     _, t, sub = list(s.shapes)
     set_text(t, ["QUANDO A IA", "SAI DA TELA:", "UM AGENTE", "QUE DESENHA"], size=28, bold=True)
-    t.top, t.width, t.height = Inches(2.35), Inches(5.0), Inches(2.3)
-    sub.top, sub.width = Inches(4.75), Inches(5.0)
-    set_text(sub, ["Integrando agentes de IA com hardware: um braço plotter."], size=14)
+    t.top, t.width, t.height = Inches(2.5), Inches(5.0), Inches(2.1)
+    sub.top, sub.width = Inches(4.9), Inches(5.4)
+    set_text(sub, ["Agentes de IA com hardware: um braço plotter.", "João Rietra"], size=14)
     notes(s, "Abertura. Hoje um agente de IA vai controlar um braço físico que desenha. O foco é o que muda quando a IA sai da tela.")
 
     # 2 agenda

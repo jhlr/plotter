@@ -271,7 +271,7 @@ def main() -> None:
     set_text(t, ["UM BRAÇO,", "DOIS SERVOS,", "UMA LLM"], size=34, bold=True)
     t.top, t.width, t.height = Inches(2.6), Inches(5.4), Inches(1.9)
     sub.top, sub.width = Inches(4.55), Inches(4.6)
-    set_text(sub, ["Oficina Arduino + MCP: primeiro na mão, depois com a IA."], size=16)
+    set_text(sub, ["Oficina Arduino + MCP: primeiro na mão, depois com a IA.", "João Rietra"], size=16)
     notes(s, "Abertura. O mesmo braço desenha de dois jeitos: escrevendo código ou pedindo em português. No fim, comparamos o esforço.")
     # 2-6 how the arm works
     image_slide("TRÊS PEÇAS", ["**Software**", "Python + MCP planejam o traço.", "**Placa**", "Arduino Uno: recebe os ângulos pela USB.", "**Braço**", "2 elos e 2 servos SG90 desenham."], "chain",
