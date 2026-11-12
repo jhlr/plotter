@@ -50,8 +50,9 @@ def main() -> int:
     cfg_path = ROOT / "opencode.json"
     cfg = json.loads(cfg_path.read_text())
     cfg["mcp"]["penarm"]["environment"]["PENARM_PORT"] = port
+    cfg["mcp"]["penarm"]["command"][0] = str(PY)  # the venv's own python: opencode needs no activated venv
     cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
-    print("opencode.json PENARM_PORT =", repr(port), "(empty = simulator)")
+    print("opencode.json PENARM_PORT =", repr(port), "(empty = simulator); MCP uses", PY)
 
     step("4/4 check with the simulator")
     r = run(PY, "examples/phase1.py", "sim")

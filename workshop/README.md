@@ -1,6 +1,6 @@
 # Workshop kit (1 hour, Portuguese)
 
-Four phases, all on the real arm: **1** by hand in Python; **2** an LLM with no abstraction (it sends raw servo angles with `examples/raw.py`: no (x, y), no sheet, no limits); **3** an LLM with the abstraction of the MCP tools; **4** the groups debate what they saw. The stages switch with `python fase.py 2` / `python fase.py 3`, which turn the penarm tools off and on in `opencode.json`.
+Four phases, all on the real arm: **1** by hand in Python; **2** an LLM with no abstraction (it sends raw servo angles with `examples/raw.py`: no (x, y), no sheet, no limits); **3** an LLM with the abstraction of the MCP tools; **4** the groups debate what they saw. All in one `opencode` session: the student starts each message with the stage name (SETUP, FASE 2, FASE 3).
 
 ## Before class (once per arm)
 
@@ -11,27 +11,32 @@ Four phases, all on the real arm: **1** by hand in Python; **2** an LLM with no 
 
 ## Each workshop computer (once)
 
-1. `git clone https://github.com/jhlr/plotter` and `cd plotter`.
-2. Python 3.11+, then `python setup.py` (Windows: `py setup.py`). It makes `.venv`, installs `penarm`, writes the board's port into `opencode.json` and checks the simulator. Run it again with the board plugged in if it found none.
-3. Install [opencode](https://opencode.ai) and log in to a model provider (`opencode auth login`) or set its API key.
-4. USB driver for the board: none on macOS/Linux; Windows needs the CH340 driver for clones.
-5. PlatformIO (`pio`) is installed on the lab machines, so any board can be flashed on the spot. Windows has no `make`; run it directly (the Uno env is `uno`, the port is the board's `COMx`):
+1. Python 3.11+, Git, and [opencode](https://opencode.ai). USB driver for the board: none on macOS/Linux; Windows needs the CH340 driver for clones.
+2. PlatformIO (`pio`) is installed on the lab machines, so any board can be flashed on the spot. Windows has no `make`; run it directly (the Uno env is `uno`, the port is the board's `COMx`):
 
        pio run -d firmware -e uno -t upload --upload-port COM3
 
-   Wait for "verified". `python setup.py` reports whether `pio` is on the PATH.
+   Wait for "verified".
 
-## In class
+## In class: one terminal, one opencode, no restarts
 
-- Setup (one prompt, in the folder or not): `opencode`, then paste: `Clone github.com/jhlr/plotter, entre na pasta, leia o AGENTS.md e siga-o.` It ends with a square on the arm.
-- Phase 1, by hand: `python examples/phase1.py` (one board plugged in is found automatically; `sim` uses the simulator). The students write a few lines with the Plotter.
-- Phase 2, LLM with no abstraction: `python fase.py 2` (penarm tools off), restart `opencode` in the repo folder, paste the prompt it prints. The agent only has `examples/raw.py`.
-- Phase 3, LLM with the MCP: `python fase.py 3` (penarm tools on), restart `opencode`, paste the prompt it prints. Keep the arm's port in `PENARM_PORT` in `opencode.json` (`python setup.py` writes it).
-- Phase 4: the groups debate. `python fase.py setup|2|3` writes `AGENTS.md` with the shared rules plus only that stage's section (the source is `workshop/agents.md`: edit that one), so the model sees just what the stage needs. A fresh clone is in the setup stage.
+1. Each student, in a terminal (Windows: `py` instead of `python`):
+
+       git clone https://github.com/jhlr/plotter && cd plotter && python setup.py
+       opencode
+
+   `setup.py` makes `.venv`, installs `penarm`, writes the board's port and the venv's Python into `opencode.json` (so the arm tools work with no activation) and checks the simulator. Run it again with the board plugged in if it found none. `opencode` must be started inside the `plotter` folder: it reads `AGENTS.md`, the Centopeia provider and the arm tools from there.
+2. **SETUP** prompt: `SETUP: confira a instalação e desenhe o primeiro quadrado.` The agent checks the simulator and draws a square on the arm.
+3. **Phase 1, by hand:** `python examples/phase1.py` (a few lines with the Plotter; `sim` uses the simulator). No agent.
+4. **Phase 2, no abstraction:** in the same `opencode` session: `FASE 2: desenhe um quadrado.` The agent only uses `examples/raw.py` (servo angles).
+5. **Phase 3, with the MCP:** same session: `FASE 3: desenhe uma casa grande com telhado.` The agent only uses the penarm tools.
+6. **Phase 4:** the groups debate.
+
+`AGENTS.md` holds the rules and the three stage sections; the student's message starts with the stage name, and the agent follows only that section. The penarm tools stay on the whole time: in phase 2 the rules tell the agent not to call them (a 27B model may slip, so watch it).
 
 ## The deck
 
-`oficina-braco-plotter.pptx` is the deck on the Rec'n'Play template (13 slides, speaker notes included; the template uses the DM Sans font). Rebuild it with:
+`oficina-braco-plotter.pptx` is the deck on the Rec'n'Play template (14 slides, speaker notes included; the template uses the DM Sans font). Rebuild it with:
 
     brew install librsvg                                  # once: renders the figures
     python workshop/build_pptx.py "<path to [TEMPLATE] Palestras RNP.pptx>"

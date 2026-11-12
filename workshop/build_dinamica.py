@@ -212,13 +212,13 @@ def main() -> None:
     tb(s, 0.66, 3.6, 6.2, 0.3, "AGENTE = MODELO + FERRAMENTAS + LAÇO", size=14, bold=True)
     tb(s, 0.66, 4.1, 6.2, 0.5, "As **instruções** (AGENTS.md) dizem ao modelo como se comportar.", size=14)
 
-    s = base("01 · FUNDAMENTOS", "AS INSTRUÇÕES: AGENTS.md", "O opencode lê o AGENTS.md ao iniciar. Ele já vem pronto no repositório: o python fase.py escreve nele só a fase atual, com as etapas e o que o agente não deve fazer.")
-    caption(s, 0.66, 1.4, 6.0, "AGENTS.md (trecho, fase 3)")
+    s = base("01 · FUNDAMENTOS", "AS INSTRUÇÕES: AGENTS.md", "O opencode lê o AGENTS.md ao iniciar. Ele já vem pronto no repositório: tem as regras e uma seção por fase, e o aluno diz a fase no começo do prompt.")
+    caption(s, 0.66, 1.4, 6.0, "AGENTS.md (trecho)")
     code_card(s, 0.66, 1.75, 6.2, [
         "# AGENTS.md: workshop rules", "",
         "You help students in a one-hour workshop where they",
         "draw with a 2-servo pen-plotter arm.", "",
-        "Current stage: FASE 3. Follow only the section below.", "",
+        "The student starts each message with the stage:", "SETUP, FASE 2 or FASE 3. Follow only that section.", "",
         "## Rules (all stages)",
         "- Work in numbered steps, one at a time.",
         "- Ask \"Posso seguir para a etapa N+1?\" and WAIT.",
@@ -308,10 +308,10 @@ def main() -> None:
     # 03 setup e modo direto
     divider("03", "Setup e modo direto", "Você desenha, linha por linha.", "Antes do agente, vocês desenham à mão com o mesmo Plotter.")
 
-    s = base("03 · SETUP E MODO DIRETO", "SETUP: 5 PASSOS", "Montagem e firmware já estão prontos. O setup.py cria o ambiente, instala o penarm e escreve a porta do braço no opencode.json.")
-    steps = [("Repositório", "git clone https://github.com/jhlr/plotter"), ("Ambiente Python", "python setup.py"),
-             ("opencode e chave", "opencode, com CENTOPEIA_API_KEY"), ("Teste sem o braço", "python examples/phase1.py sim"),
-             ("Vamos rodar", "plugue UMA placa USB; python examples/phase1.py")]
+    s = base("03 · SETUP E MODO DIRETO", "SETUP: 5 PASSOS", "Montagem e firmware já estão prontos. O setup.py cria o ambiente, instala o penarm e escreve a porta do braço no opencode.json. O opencode precisa abrir dentro da pasta plotter e fica aberto até o fim, sem reiniciar.")
+    steps = [("Repositório", "git clone https://github.com/jhlr/plotter && cd plotter"), ("Ambiente Python", "python setup.py  (Windows: py setup.py)"),
+             ("Abrir o opencode", "opencode, dentro da pasta (a chave já está no opencode.json)"), ("Primeiro quadrado", "SETUP: confira a instalação e desenhe o primeiro quadrado."),
+             ("Vamos rodar", "plugue UMA placa USB antes do setup.py")]
     for i, (a, b2) in enumerate(steps):
         y = 1.5 + i * 0.68
         o = s.shapes.add_shape(MSO_SHAPE.OVAL, Inches(0.66), Inches(y), Inches(0.36), Inches(0.36))
@@ -350,8 +350,8 @@ def main() -> None:
     tb(s, 0.9, 3.35, 5.8, 1.3, ["**Sem (x, y). Sem milímetros. Sem folha.**", "Só dois ângulos de servo.",
                                 "E o ângulo do servo não é o ângulo do braço: cada horn tem o seu offset."], size=13)
 
-    s = base("04 · SEM ABSTRAÇÃO", "EXERCÍCIO: SEM ABSTRAÇÃO", "python fase.py 2 desliga o penarm; o agente só tem o raw.py. Deixe errar: o objetivo é sentir o que falta.")
-    h1 = code_card(s, 0.66, 1.5, 6.2, ["python fase.py 2   # penarm desligado", "opencode", "> Siga o AGENTS.md.", "  Desenhe um quadrado."], 11)
+    s = base("04 · SEM ABSTRAÇÃO", "EXERCÍCIO: SEM ABSTRAÇÃO", "No mesmo opencode: o prompt começa com FASE 2 e o agente só usa o raw.py. Deixe errar: o objetivo é sentir o que falta.")
+    h1 = code_card(s, 0.66, 1.5, 6.2, ["> FASE 2: desenhe um quadrado."], 11)
     card(s, 0.66, 1.5 + h1 + 0.2, 6.2, 2.1)
     tb(s, 0.9, 1.5 + h1 + 0.35, 5.8, 1.9, ["Sua tarefa: **fazer a LLM desenhar um quadrado**, sem ajudá-la com contas.", "Observe:", "• Quantos pedidos até sair um quadrado?",
                                             "• O que a LLM chutou: ângulos, escala, folha?", "• Onde a caneta caiu?"], size=12)
@@ -372,8 +372,8 @@ def main() -> None:
     # como melhorar
     divider("", "COMO MELHORAR?", "Tire o LLM do laço rápido. O Plotter roda o traço: rápido, determinístico, seguro. O LLM escolhe as formas: lento, flexível.", "Ferramentas de alto nível, como draw_shape, deixam o modelo decidir o quê, e o código decide como.")
 
-    s = base("05 · COM ABSTRAÇÃO (MCP)", "EXERCÍCIO: COM O MCP", "python fase.py 3 liga o penarm. O grupo só pede o desenho em português. A ferramenta draw_shape tem coração, casa não: o agente precisa combinar linhas. Ele consulta canvas_info e ensaia com dry_run.")
-    h1 = code_card(s, 0.66, 1.5, 6.2, ["python fase.py 3   # penarm ligado", "opencode", "> Siga o AGENTS.md.", "  Desenhe uma casa grande com telhado."], 11)
+    s = base("05 · COM ABSTRAÇÃO (MCP)", "EXERCÍCIO: COM O MCP", "No mesmo opencode: o prompt começa com FASE 3. O grupo só pede o desenho em português. A ferramenta draw_shape tem coração, casa não: o agente precisa combinar linhas. Ele consulta canvas_info e ensaia com dry_run.")
+    h1 = code_card(s, 0.66, 1.5, 6.2, ["> FASE 3: desenhe uma casa grande", "  com telhado."], 11)
     card(s, 0.66, 1.5 + h1 + 0.2, 6.2, 2.0)
     tb(s, 0.9, 1.5 + h1 + 0.35, 5.8, 1.8, ["Sua tarefa: **o mesmo pedido, agora com as ferramentas**.", "Observe:", "• A LLM chamou canvas_info e dry_run sozinha?", "• Quantos pedidos até a casa sair?", "• O que ela não precisou saber desta vez?"], size=11.5)
 

@@ -6,7 +6,7 @@ A 2-link planar arm (two SG90 servos, 3D-printed parts, an Arduino Uno) that dra
 
 The arm has **no pen lift**: travel moves mark the paper, so each drawing starts on a clean sheet and is one continuous trace.
 
-> **Handing this repo to an AI agent?** For the **workshop**, [`AGENTS.md`](AGENTS.md) holds the rules and the current stage (SETUP, FASE 2 no abstraction, FASE 3 with MCP); `python fase.py setup|2|3` switches it, from `workshop/agents.md`. For **flashing and calibrating**, [`docs/runbook-hardware.md`](docs/runbook-hardware.md) is the step-by-step runbook, and says which steps need a human (wiring, flashing, swapping the sheet, taking the calibration photo).
+> **Handing this repo to an AI agent?** For the **workshop**, [`AGENTS.md`](AGENTS.md) holds the rules and the three workshop stages (SETUP, FASE 2 no abstraction, FASE 3 with MCP); the student starts each message with the stage name. For **flashing and calibrating**, [`docs/runbook-hardware.md`](docs/runbook-hardware.md) is the step-by-step runbook, and says which steps need a human (wiring, flashing, swapping the sheet, taking the calibration photo).
 
 ## 0. Try it in 2 minutes, no hardware
 
@@ -28,7 +28,7 @@ Then connect your agent. The server is a plain **stdio MCP server**, so every cl
 | env | `PENARM_PORT=<serial port>` for the real arm, **leave it unset for the simulator** |
 
 - **Claude Code**, from inside the cloned repo: it picks up the committed [`.mcp.json`](.mcp.json) on its own (approve it when asked). Or add it anywhere with `claude mcp add penarm -e PENARM_PORT=/dev/cu.usbserial-XXXX -- /ABSOLUTE/PATH/plotter/.venv/bin/penarm-mcp` (drop `-e ...` for the simulator, add `-s user` for every project).
-- **opencode**, from inside the repo with `.venv` active: it reads the committed [`opencode.json`](opencode.json) (the server and the workshop's model provider). `python setup.py` writes the board's port into it.
+- **opencode**, started inside the repo: it reads the committed [`opencode.json`](opencode.json) (the server and the workshop's model provider). `python setup.py` writes the board's port and the venv's Python into it, so no activation is needed.
 - **Claude Desktop** and most other clients (Cursor, Windsurf, Cline, ...) use the same JSON shape in their MCP settings file (Claude Desktop: Settings -> Developer -> Edit Config):
 
         {

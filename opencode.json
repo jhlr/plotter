@@ -11,7 +11,7 @@
       "environment": {
         "PENARM_PORT": ""
       },
-      "enabled": false
+      "enabled": true
     }
   },
   "model": "centopeia/Qwen-27B-latest",

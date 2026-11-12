@@ -324,7 +324,7 @@ def main() -> None:
     # phase 2: no abstraction
     s, panel = image_slide("FASE 2: SEM ABSTRAÇÃO", ["A LLM só tem o protocolo da placa: ângulos de servo.", "Ela chuta, você olha o que saiu."], None,
                            "A LLM roda raw.py e manda ângulos de servo. Não há (x, y), nem folha, nem limites. Ela precisa descobrir sozinha onde a caneta cai. Deixar errar: é o ponto da fase.", 15,
-                           code_lines=["python fase.py 2", "opencode", "> Siga o AGENTS.md.", "  Desenhe um quadrado."])
+                           code_lines=["> FASE 2: desenhe", "  um quadrado."])
     tb = s.shapes.add_textbox(Inches(5.6), Inches(0.8), Inches(4.0), Inches(4.0))
     tf = tb.text_frame
     tf.word_wrap = True
@@ -338,7 +338,7 @@ def main() -> None:
         r.font.color.rgb = RGBColor.from_string(CREAM)
         par.space_after = Pt(12)
     # phase 3: MCP
-    image_slide("FASE 3: COM O MCP", ["Rode **python fase.py 3** e reabra o opencode.", "**“Desenha uma casa grande com telhado.”**", "**Ideias simples:** um coração, uma casa, um sol (círculo com raios), uma seta.",
+    image_slide("FASE 3: COM O MCP", ["No mesmo opencode: **“FASE 3: desenhe uma casa grande com telhado.”**", "**Ideias simples:** um coração, uma casa, um sol (círculo com raios), uma seta.",
                                      "Saiu torto? Peça ajuste: “maior”, “mais para a esquerda”."], "house",
                 "Mesmo pedido da fase 2, agora com as ferramentas do Plotter: a LLM descobre o tamanho da folha (canvas_info), ensaia (dry_run) e só então desenha.", 14)
     s = clone(prs, tpl[T_TEXT - 1])
